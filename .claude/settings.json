@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"C:/Users/MBri/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/productivity/grill-me\")",
+      "Read(//c/Users/MBri/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/productivity/grill-me/**)",
+      "Bash(find \"C:/Users/MBri/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/productivity/grilling\" -type f | head -20)",
+      "Read(//c/Users/MBri/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/productivity/grilling/**)",
+      "Bash(python3 -m py_compile gray.py)"
+    ]
+  }
+}
