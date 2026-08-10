@@ -46,13 +46,15 @@ DEFAULT_DUR = 0.0      # 默认不传 --dur = 一直采集，Ctrl+C 手动停止
 # 由 data/*.csv 经 calibrate_gray.py 重算，2026-08-10。
 # edge/center 用于黑色渐变外圈定位；white 用于真正压到白边时的紧急告警。
 GRAY_FILTER_WINDOW = 3
+# 来源：data/gray_model.csv；真实边缘中位数 -> 内环较外侧中位数。
 GRAY_EDGE_REFERENCE = {"front": 666.0, "rear": 798.0, "left": 458.0, "right": 1143.0}
-GRAY_CENTER_REFERENCE = {"front": 1321.0, "rear": 1768.0, "left": 981.0, "right": 1633.0}
+GRAY_CENTER_REFERENCE = {"front": 1033.5, "rear": 1257.0, "left": 817.0, "right": 1622.0}
 GRAY_WHITE_REFERENCE = {"front": 1924.0, "rear": 2283.0, "left": 1625.0, "right": 2507.0}
 GRAY_WHITE_ENTER = {"front": 1798.0, "rear": 2154.0, "left": 1508.0, "right": 2395.0}
 GRAY_WHITE_CLEAR = {"front": 1731.0, "rear": 2085.0, "left": 1445.0, "right": 2337.0}
-GRAY_NEAR_EDGE_ENTER = 0.30
-GRAY_NEAR_EDGE_CLEAR = 0.50
+# 大转阈值：提高会更早 180 度，降低会更靠近真实边缘才 180 度。
+GRAY_NEAR_EDGE_ENTER = 0.50
+GRAY_NEAR_EDGE_CLEAR = 0.65
 
 
 def _open_up():

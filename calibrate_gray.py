@@ -20,9 +20,16 @@ FILES = {
     ),
     "traverse": ("中轴.csv", "中轴2.csv", "对角轴.csv", "对角轴2.csv"),
 }
+INNER_FILES = (
+    "更内环侧向移动车头朝武字反方向.csv",
+    "更内环侧向移动车头朝武字方向.csv",
+    "更内环平行移动车头朝内.csv",
+    "更内环平行移动车头朝外.csv",
+)
+INNER_EDGE_FRACTION = 0.20
 FILTER_WINDOW = 3
-NEAR_EDGE_ENTER = 0.30
-NEAR_EDGE_CLEAR = 0.50
+NEAR_EDGE_ENTER = 0.50
+NEAR_EDGE_CLEAR = 0.65
 
 
 def quantile(values, ratio):
@@ -57,6 +64,17 @@ def load_groups(data_dir):
             if not os.path.isfile(path):
                 raise FileNotFoundError("缺少校准文件：%s" % path)
             groups[role].extend(read_filtered(path))
+    groups["inner"] = []
+    groups["inner_edge"] = []
+    for filename in INNER_FILES:
+        path = os.path.join(data_dir, filename)
+        if not os.path.isfile(path):
+            raise FileNotFoundError("缺少内环校准文件：%s" % path)
+        rows = read_filtered(path)
+        edge_count = max(1, int(len(rows) * INNER_EDGE_FRACTION))
+        groups["inner"].extend(rows)
+        groups["inner_edge"].extend(rows[:edge_count])
+        groups["inner_edge"].extend(rows[-edge_count:])
     return groups
 
 
@@ -65,7 +83,7 @@ def build_model(groups):
     safe_rows = groups["edge"] + groups["center"]
     for name in NAMES:
         edge_ref = quantile([row[name] for row in groups["edge"]], 0.5)
-        center_ref = quantile([row[name] for row in groups["center"]], 0.5)
+        center_ref = quantile([row[name] for row in groups["inner_edge"]], 0.5)
         white_ref = quantile([row[name] for row in groups["white"]], 0.5)
         safe_upper = quantile([row[name] for row in safe_rows], 0.999)
         white_lower = quantile([row[name] for row in groups["white"]], 0.001)
