@@ -16,6 +16,9 @@ sys.path.insert(0, ROOT)
 from config import (  # noqa: E402
     CHASSIS_MOTOR_INVERT,
     CHASSIS_MOTOR_SWAP,
+    GRAY_ADC_MAX,
+    GRAY_CHANNELS,
+    GRAY_WHITE_ENTER,
     PATROL_STALE_SECONDS,
 )
 from gray import GrayRiskModel, GraySensor  # noqa: E402
@@ -36,7 +39,12 @@ def run(args):
         motor_invert=args.motor_invert,
         motor_swap=args.motor_swap,
     )
-    sensor = GraySensor(adc_reader=lambda: hardware.adc_data)
+    sensor = GraySensor(
+        adc_reader=lambda: hardware.adc_data,
+        channels=GRAY_CHANNELS,
+        adc_max=GRAY_ADC_MAX,
+        white_enter=GRAY_WHITE_ENTER,
+    )
     patrol = RingPatrolController()
     fields = (
         "t", "front", "rear", "left", "right", "zone_front", "zone_rear",

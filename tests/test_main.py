@@ -9,8 +9,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from digi_ir import DIGI_IR_PINS
-from gray import GRAY_CENTER_REFERENCE, GRAY_EDGE_REFERENCE
+from config import (
+    DIGI_IR_PINS,
+    GRAY_CENTER_REFERENCE,
+    GRAY_EDGE_REFERENCE,
+    GRAY_FILTER_WINDOW,
+    IR_ALIGNMENT_DIFF_HIGH,
+    IR_ALIGNMENT_DIFF_LOW,
+    IR_ALIGNMENT_FILTER_WINDOW,
+    IR_ALIGNMENT_SIGNAL_MIN,
+)
 from main import RobotController
 
 
@@ -29,6 +37,19 @@ FALLEN_GRAY = {
 
 
 class RobotControllerTest(unittest.TestCase):
+    def test_runtime_controllers_use_config_sensor_parameters(self):
+        robot = RobotController()
+        self.assertEqual(GRAY_FILTER_WINDOW, robot.patrol.model.window)
+        self.assertEqual(GRAY_FILTER_WINDOW, robot.reentry.model.window)
+        self.assertEqual(
+            IR_ALIGNMENT_FILTER_WINDOW, robot.reentry._alignment.window,
+        )
+        self.assertEqual(IR_ALIGNMENT_DIFF_LOW, robot.reentry._alignment.diff_low)
+        self.assertEqual(IR_ALIGNMENT_DIFF_HIGH, robot.reentry._alignment.diff_high)
+        self.assertEqual(
+            IR_ALIGNMENT_SIGNAL_MIN, robot.reentry._alignment.signal_min,
+        )
+
     def update(self, robot, gray, ir=None, now=0.0):
         return robot.update(
             gray,

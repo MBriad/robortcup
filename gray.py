@@ -6,7 +6,7 @@ import math
 import statistics
 from collections import deque
 
-# ---------- 参数（config.py 仅做汇总；本模块不依赖其他项目模块） ----------
+# ---------- 独立默认值；生产/dev 运行时由 config.py 注入 ----------
 GRAY_CHANNELS = {
     "front": 2,    # 前灰度
     "rear": 3,     # 后灰度
@@ -35,8 +35,14 @@ class GraySensor:
     adc_reader：返回 10 路 ADC 列表的可调用对象（如 lambda: ctrl.adc_data）。
     """
 
-    def __init__(self, adc_reader=None):
+    def __init__(self, adc_reader=None, channels=None, adc_max=ADC_MAX,
+                 white_enter=None):
         self._reader = adc_reader
+        self.channels = dict(GRAY_CHANNELS if channels is None else channels)
+        self.adc_max = float(adc_max)
+        self.white_enter = dict(
+            GRAY_WHITE_ENTER if white_enter is None else white_enter
+        )
 
     def read_raw(self, adc=None):
         if adc is None:
@@ -44,30 +50,31 @@ class GraySensor:
                 raise RuntimeError("需注入 adc_reader（或显式传 adc）")
             adc = self._reader()
         out = {}
-        for name, ch in GRAY_CHANNELS.items():
+        for name, ch in self.channels.items():
             v = adc[ch] if 0 <= ch < len(adc) else 0
             try:
                 v = float(v)
             except (TypeError, ValueError):
                 v = 0.0
-            if not (0.0 <= v <= ADC_MAX):
+            if not (0.0 <= v <= self.adc_max):
                 v = 0.0
             out[name] = v
         return out
 
-    def edge(self, threshold=GRAY_WHITE_ENTER, raw=None):
+    def edge(self, threshold=None, raw=None):
         """压到白边：返回超过逐路阈值的方向名列表（空=未压白边）。"""
         raw = self.read_raw() if raw is None else raw
+        threshold = self.white_enter if threshold is None else threshold
         thresholds = threshold if isinstance(threshold, dict) else {
-            name: threshold for name in GRAY_CHANNELS
+            name: threshold for name in self.channels
         }
         return [name for name, v in raw.items() if v >= thresholds[name]]
 
-    def fall(self, threshold=GRAY_WHITE_ENTER, raw=None):
+    def fall(self, threshold=None, raw=None):
         """兼容旧接口：任一路压到白边即视为掉台风险。"""
         return bool(self.edge(threshold, raw))
 
-    def on_stage(self, threshold=GRAY_WHITE_ENTER, raw=None):
+    def on_stage(self, threshold=None, raw=None):
         """兼容旧接口：四路均未压到白边。"""
         return not self.fall(threshold, raw)
 
@@ -81,14 +88,35 @@ class GrayRiskModel:
 
     NAMES = ("front", "rear", "left", "right")
 
-    def __init__(self, window=GRAY_FILTER_WINDOW):
+    def __init__(
+            self, window=GRAY_FILTER_WINDOW, edge_reference=None,
+            center_reference=None, white_reference=None, white_enter=None,
+            white_clear=None, near_edge_enter=GRAY_NEAR_EDGE_ENTER,
+            near_edge_clear=GRAY_NEAR_EDGE_CLEAR, adc_max=ADC_MAX):
         if window < 1 or window % 2 == 0:
             raise ValueError("滤波窗口必须为正奇数")
         self.window = window
+        self.edge_reference = dict(
+            GRAY_EDGE_REFERENCE if edge_reference is None else edge_reference
+        )
+        self.center_reference = dict(
+            GRAY_CENTER_REFERENCE if center_reference is None else center_reference
+        )
+        self.white_reference = dict(
+            GRAY_WHITE_REFERENCE if white_reference is None else white_reference
+        )
+        self.white_enter = dict(
+            GRAY_WHITE_ENTER if white_enter is None else white_enter
+        )
+        self.white_clear = dict(
+            GRAY_WHITE_CLEAR if white_clear is None else white_clear
+        )
+        self.near_edge_enter = float(near_edge_enter)
+        self.near_edge_clear = float(near_edge_clear)
+        self.adc_max = float(adc_max)
         self._samples = {name: deque(maxlen=window) for name in self.NAMES}
 
-    @staticmethod
-    def _clean(raw):
+    def _clean(self, raw):
         cleaned = {}
         valid = True
         for name in GrayRiskModel.NAMES:
@@ -97,7 +125,7 @@ class GrayRiskModel:
             except (KeyError, TypeError, ValueError):
                 value = 0.0
                 valid = False
-            if not math.isfinite(value) or not 0.0 <= value <= ADC_MAX:
+            if not math.isfinite(value) or not 0.0 <= value <= self.adc_max:
                 value = 0.0
                 valid = False
             cleaned[name] = value
@@ -113,19 +141,19 @@ class GrayRiskModel:
             for name in self.NAMES
         }
         zone = {
-            name: ((filtered[name] - GRAY_EDGE_REFERENCE[name]) /
-                   (GRAY_CENTER_REFERENCE[name] - GRAY_EDGE_REFERENCE[name]))
+            name: ((filtered[name] - self.edge_reference[name]) /
+                   (self.center_reference[name] - self.edge_reference[name]))
             for name in self.NAMES
         }
         white = {
-            name: ((filtered[name] - GRAY_CENTER_REFERENCE[name]) /
-                   (GRAY_WHITE_REFERENCE[name] - GRAY_CENTER_REFERENCE[name]))
+            name: ((filtered[name] - self.center_reference[name]) /
+                   (self.white_reference[name] - self.center_reference[name]))
             for name in self.NAMES
         }
         zone_score = float(statistics.median(zone.values()))
         white_hits = tuple(
             name for name in self.NAMES
-            if filtered[name] >= GRAY_WHITE_ENTER[name]
+            if filtered[name] >= self.white_enter[name]
         )
         return {
             "ready": len(self._samples["front"]) == self.window,
@@ -135,10 +163,10 @@ class GrayRiskModel:
             "zone": zone,
             "white": white,
             "zone_score": zone_score,
-            "near_edge": zone_score < GRAY_NEAR_EDGE_ENTER,
-            "near_clear": zone_score > GRAY_NEAR_EDGE_CLEAR,
+            "near_edge": zone_score < self.near_edge_enter,
+            "near_clear": zone_score > self.near_edge_clear,
             "white_hits": white_hits,
             "white_clear": all(
-                filtered[name] < GRAY_WHITE_CLEAR[name] for name in self.NAMES
+                filtered[name] < self.white_clear[name] for name in self.NAMES
             ),
         }

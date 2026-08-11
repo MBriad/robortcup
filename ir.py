@@ -6,7 +6,7 @@ import math
 import statistics
 from collections import deque
 
-# ---------- 参数（config.py 仅做汇总；本模块不依赖其他项目模块） ----------
+# ---------- 独立默认值；生产/dev 运行时由 config.py 注入 ----------
 # 通道映射按真机接线确认（换车时用 `scan` 看全 10 路再改这里）。
 IR_CHANNELS = {
     "left": 5,     # 前左红外
@@ -29,8 +29,10 @@ class IrSensor:
     策略层收到无效应停车，不当「没墙」继续开）。
     """
 
-    def __init__(self, adc_reader=None):
+    def __init__(self, adc_reader=None, channels=None, adc_max=ADC_MAX):
         self._reader = adc_reader
+        self.channels = dict(IR_CHANNELS if channels is None else channels)
+        self.adc_max = float(adc_max)
 
     def read_raw(self, adc=None):
         if adc is None:
@@ -39,7 +41,7 @@ class IrSensor:
             adc = self._reader()
         out = {}
         valid = True
-        for name, ch in IR_CHANNELS.items():
+        for name, ch in self.channels.items():
             if not (0 <= ch < len(adc)):
                 out[name] = 0.0
                 valid = False
@@ -48,7 +50,7 @@ class IrSensor:
                 v = float(adc[ch])
             except (TypeError, ValueError):
                 v = 0.0
-            if not (0.0 <= v <= ADC_MAX):
+            if not (0.0 <= v <= self.adc_max):
                 v = 0.0
                 valid = False
             out[name] = v
@@ -66,10 +68,18 @@ class IrSensor:
 class IrAlignmentModel:
     """前墙对齐分类：左偏需右转，正对保持，右偏需左转。"""
 
-    def __init__(self, window=IR_ALIGNMENT_FILTER_WINDOW):
+    def __init__(
+            self, window=IR_ALIGNMENT_FILTER_WINDOW,
+            diff_low=IR_ALIGNMENT_DIFF_LOW,
+            diff_high=IR_ALIGNMENT_DIFF_HIGH,
+            signal_min=IR_ALIGNMENT_SIGNAL_MIN, adc_max=ADC_MAX):
         if window < 1 or window % 2 == 0:
             raise ValueError("滤波窗口必须为正奇数")
         self.window = window
+        self.diff_low = float(diff_low)
+        self.diff_high = float(diff_high)
+        self.signal_min = float(signal_min)
+        self.adc_max = float(adc_max)
         self.reset()
 
     def reset(self):
@@ -84,7 +94,7 @@ class IrAlignmentModel:
         except (KeyError, TypeError, ValueError):
             left = right = 0.0
             valid = False
-        if not all(math.isfinite(value) and 0.0 <= value <= ADC_MAX
+        if not all(math.isfinite(value) and 0.0 <= value <= self.adc_max
                    for value in (left, right)):
             left = right = 0.0
             valid = False
@@ -106,9 +116,9 @@ class IrAlignmentModel:
         ready = len(self._left) == self.window
         if not ready:
             position, correction = "warming", "stop"
-        elif diff < IR_ALIGNMENT_DIFF_LOW:
+        elif diff < self.diff_low:
             position, correction = "left_bias", "right"
-        elif diff > IR_ALIGNMENT_DIFF_HIGH:
+        elif diff > self.diff_high:
             position, correction = "right_bias", "left"
         else:
             position, correction = "center", "stop"
@@ -119,7 +129,7 @@ class IrAlignmentModel:
             "right": filtered_right,
             "diff": diff,
             "signal": signal,
-            "strong": ready and signal >= IR_ALIGNMENT_SIGNAL_MIN,
+            "strong": ready and signal >= self.signal_min,
             "position": position,
             "correction": correction,
         }

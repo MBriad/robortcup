@@ -13,7 +13,8 @@ if ROOT in sys.path:
     sys.path.remove(ROOT)
 sys.path.insert(0, ROOT)
 
-from ir import IR_CHANNELS, IrSensor  # noqa: E402
+from config import IR_ADC_MAX, IR_CHANNELS  # noqa: E402
+from ir import IrSensor  # noqa: E402
 
 
 POLL_INTERVAL = 0.5
@@ -37,7 +38,7 @@ def _open_up():
 
 
 def scan(hardware, mapped):
-    sensor = IrSensor()
+    sensor = IrSensor(channels=IR_CHANNELS, adc_max=IR_ADC_MAX)
     marks = {IR_CHANNELS["left"]: "L", IR_CHANNELS["right"]: "R"}
     if mapped:
         print("扫描红外通道（left=adc%d, right=adc%d）（Ctrl+C 退出）" % (
@@ -69,7 +70,7 @@ def scan(hardware, mapped):
 
 
 def collect(hardware, out, hz, duration):
-    sensor = IrSensor()
+    sensor = IrSensor(channels=IR_CHANNELS, adc_max=IR_ADC_MAX)
     period = 1.0 / hz
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     start = time.monotonic()

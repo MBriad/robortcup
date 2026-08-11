@@ -11,9 +11,17 @@ import time
 from config import (
     CHASSIS_MOTOR_INVERT,
     CHASSIS_MOTOR_SWAP,
+    DIGI_IR_ACTIVE_LEVEL,
+    DIGI_IR_BITS,
+    DIGI_IR_PINS,
+    GRAY_ADC_MAX,
+    GRAY_CHANNELS,
+    GRAY_WHITE_ENTER,
+    IR_ADC_MAX,
+    IR_CHANNELS,
     PATROL_STALE_SECONDS,
 )
-from digi_ir import DIGI_IR_PINS, DigiIR
+from digi_ir import DigiIR
 from gray import GrayRiskModel, GraySensor
 from ir import IrSensor
 from reentry import ReentryController
@@ -70,9 +78,22 @@ def run(args):
         motor_invert=args.motor_invert,
         motor_swap=args.motor_swap,
     )
-    gray_sensor = GraySensor(adc_reader=lambda: hardware.adc_data)
-    digi = DigiIR(io_reader=lambda: hardware.io_data)
-    analog_sensor = IrSensor(adc_reader=lambda: hardware.adc_data)
+    gray_sensor = GraySensor(
+        adc_reader=lambda: hardware.adc_data,
+        channels=GRAY_CHANNELS,
+        adc_max=GRAY_ADC_MAX,
+        white_enter=GRAY_WHITE_ENTER,
+    )
+    digi = DigiIR(
+        io_reader=lambda: hardware.io_data,
+        bits=DIGI_IR_BITS,
+        active_level=DIGI_IR_ACTIVE_LEVEL,
+    )
+    analog_sensor = IrSensor(
+        adc_reader=lambda: hardware.adc_data,
+        channels=IR_CHANNELS,
+        adc_max=IR_ADC_MAX,
+    )
     robot = RobotController()
     fields = (
         "t", "front", "rear", "left", "right",

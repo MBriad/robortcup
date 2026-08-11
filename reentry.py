@@ -25,24 +25,35 @@
 import time
 
 from config import (
+    DIGI_IR_PINS,
+    GRAY_ADC_MAX,
+    GRAY_CENTER_REFERENCE,
+    GRAY_EDGE_REFERENCE,
+    GRAY_FILTER_WINDOW,
+    GRAY_NEAR_EDGE_CLEAR,
+    GRAY_NEAR_EDGE_ENTER,
+    GRAY_WHITE_CLEAR,
+    GRAY_WHITE_ENTER,
+    GRAY_WHITE_REFERENCE,
+    IR_ADC_MAX,
     IR_ALIGNMENT_CONFIRM,
+    IR_ALIGNMENT_DIFF_HIGH,
+    IR_ALIGNMENT_DIFF_LOW,
+    IR_ALIGNMENT_FILTER_WINDOW,
+    IR_ALIGNMENT_SIGNAL_MIN,
     MOTOR_TURN_CALIBRATION,
     PATROL_COMMAND_LIMIT,
-    PATROL_MIN_ACTIVE_SPEED,
     PATROL_RECOVER_SPEED,
+    REENTRY_APPROACH_LIMIT as APPROACH_LIMIT,
+    REENTRY_APPROACH_PULSE_SECONDS as APPROACH_PULSE_SECONDS,
+    REENTRY_APPROACH_SPEED as APPROACH_SPEED,
+    REENTRY_CORRECT_TIMEOUT as CORRECT_TIMEOUT,
+    REENTRY_CORRECT_TURN_SPEED as CORRECT_TURN_SPEED,
+    REENTRY_FALL_CONFIRM as FALL_CONFIRM,
+    REENTRY_REVERSE_TIMEOUT as REVERSE_TIMEOUT,
 )
-from digi_ir import DIGI_IR_PINS
 from gray import GrayRiskModel
 from ir import IrAlignmentModel
-
-# ---------- 状态机参数（config.py 汇总跨模块参数；本模块参数独用） ----------
-FALL_CONFIRM = 3        # 掉台判定：四路 zone 全 <0 的连续帧数（防抖）
-CORRECT_TURN_SPEED = PATROL_MIN_ACTIVE_SPEED  # 矫正速度不得低于电机实测启动门槛
-CORRECT_TIMEOUT = 3.0   # 矫正超时 → 停车待命
-APPROACH_SPEED = PATROL_MIN_ACTIVE_SPEED
-APPROACH_PULSE_SECONDS = 0.30  # 400 速度约前进 10.75cm（按 0.6 秒/21.5cm 标定）
-APPROACH_LIMIT = 3      # 防止 ADC 异常时持续向墙前进
-REVERSE_TIMEOUT = 3.0   # 倒车超时 → 停车待命（前头红外先无值则提前停）
 
 
 class ReentryController:
@@ -56,8 +67,24 @@ class ReentryController:
     """
 
     def __init__(self, force_fall=False):
-        self.model = GrayRiskModel()
-        self._alignment = IrAlignmentModel()
+        self.model = GrayRiskModel(
+            window=GRAY_FILTER_WINDOW,
+            edge_reference=GRAY_EDGE_REFERENCE,
+            center_reference=GRAY_CENTER_REFERENCE,
+            white_reference=GRAY_WHITE_REFERENCE,
+            white_enter=GRAY_WHITE_ENTER,
+            white_clear=GRAY_WHITE_CLEAR,
+            near_edge_enter=GRAY_NEAR_EDGE_ENTER,
+            near_edge_clear=GRAY_NEAR_EDGE_CLEAR,
+            adc_max=GRAY_ADC_MAX,
+        )
+        self._alignment = IrAlignmentModel(
+            window=IR_ALIGNMENT_FILTER_WINDOW,
+            diff_low=IR_ALIGNMENT_DIFF_LOW,
+            diff_high=IR_ALIGNMENT_DIFF_HIGH,
+            signal_min=IR_ALIGNMENT_SIGNAL_MIN,
+            adc_max=IR_ADC_MAX,
+        )
         self.state = "WAIT"
         self.reason = "等待掉台触发"
         self.command = (0, 0)

@@ -23,6 +23,26 @@ from dev import calibrate_front_adc, digi_ir_tool, ir_tool
 
 
 class SensorModuleBoundaryTest(unittest.TestCase):
+    def test_sensor_modules_accept_runtime_config_injection(self):
+        gray_sensor = gray.GraySensor(channels={
+            "front": 0, "rear": 1, "left": 2, "right": 3,
+        })
+        self.assertEqual(
+            {"front": 10.0, "rear": 20.0, "left": 30.0, "right": 40.0},
+            gray_sensor.read_raw([10, 20, 30, 40]),
+        )
+
+        ir_sensor = ir.IrSensor(channels={"left": 1, "right": 0})
+        self.assertEqual(
+            {"left": 20.0, "right": 10.0, "valid": True},
+            ir_sensor.read_raw([10, 20]),
+        )
+
+        digital = digi_ir.DigiIR(bits={"front": 0}, active_level=1)
+        self.assertEqual(
+            {"front": True, "valid": True}, digital.read_states(1),
+        )
+
     def test_production_sensor_modules_do_not_contain_dev_runtime(self):
         for module in (gray, ir, digi_ir):
             source = inspect.getsource(module)

@@ -10,17 +10,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from config import MOTOR_TURN_CALIBRATION, PATROL_MIN_ACTIVE_SPEED
-from digi_ir import DIGI_IR_PINS
-from gray import GRAY_CENTER_REFERENCE, GRAY_EDGE_REFERENCE, GrayRiskModel
-from ir import (
+from config import (
+    DIGI_IR_PINS,
+    GRAY_ADC_MAX,
+    GRAY_CENTER_REFERENCE,
+    GRAY_EDGE_REFERENCE,
+    GRAY_FILTER_WINDOW,
+    GRAY_NEAR_EDGE_CLEAR,
+    GRAY_NEAR_EDGE_ENTER,
+    GRAY_WHITE_CLEAR,
+    GRAY_WHITE_ENTER,
+    GRAY_WHITE_REFERENCE,
+    IR_ADC_MAX,
     IR_ALIGNMENT_CONFIRM,
     IR_ALIGNMENT_DIFF_HIGH,
     IR_ALIGNMENT_DIFF_LOW,
     IR_ALIGNMENT_FILTER_WINDOW,
     IR_ALIGNMENT_SIGNAL_MIN,
-    IrAlignmentModel,
+    MOTOR_TURN_CALIBRATION,
+    PATROL_MIN_ACTIVE_SPEED,
 )
+from gray import GrayRiskModel
+from ir import IrAlignmentModel
 from reentry import (
     APPROACH_LIMIT,
     APPROACH_PULSE_SECONDS,
@@ -54,11 +65,35 @@ ANALOG_RIGHT_BIAS = {"left": 610.0, "right": 20.0, "valid": True}
 ANALOG_WEAK = {"left": 184.0, "right": 20.0, "valid": True}
 
 
+def configured_gray_model(window=GRAY_FILTER_WINDOW):
+    return GrayRiskModel(
+        window=window,
+        edge_reference=GRAY_EDGE_REFERENCE,
+        center_reference=GRAY_CENTER_REFERENCE,
+        white_reference=GRAY_WHITE_REFERENCE,
+        white_enter=GRAY_WHITE_ENTER,
+        white_clear=GRAY_WHITE_CLEAR,
+        near_edge_enter=GRAY_NEAR_EDGE_ENTER,
+        near_edge_clear=GRAY_NEAR_EDGE_CLEAR,
+        adc_max=GRAY_ADC_MAX,
+    )
+
+
+def configured_alignment_model(window=IR_ALIGNMENT_FILTER_WINDOW):
+    return IrAlignmentModel(
+        window=window,
+        diff_low=IR_ALIGNMENT_DIFF_LOW,
+        diff_high=IR_ALIGNMENT_DIFF_HIGH,
+        signal_min=IR_ALIGNMENT_SIGNAL_MIN,
+        adc_max=IR_ADC_MAX,
+    )
+
+
 class ReentryControllerTest(unittest.TestCase):
     @staticmethod
     def controller_without_filter_delay():
         controller = ReentryController()
-        controller.model = GrayRiskModel(window=1)
+        controller.model = configured_gray_model(window=1)
         return controller
 
     def replay_csv(self, filename):
@@ -201,7 +236,7 @@ class ReentryControllerTest(unittest.TestCase):
 
     def test_adc_correction_uses_calibrated_turn_directions(self):
         controller = ReentryController()
-        controller._alignment = IrAlignmentModel(window=1)
+        controller._alignment = configured_alignment_model(window=1)
         result = self.trigger_fall(controller, ir_states(front=True))
         self.assertEqual("ADC_CORRECT", result["state"])
 
@@ -216,7 +251,7 @@ class ReentryControllerTest(unittest.TestCase):
         )
 
         controller = ReentryController()
-        controller._alignment = IrAlignmentModel(window=1)
+        controller._alignment = configured_alignment_model(window=1)
         self.trigger_fall(controller, ir_states(front=True))
         result = controller.update(
             fallen_gray(), ir_states(front=True), ANALOG_RIGHT_BIAS,
@@ -229,7 +264,7 @@ class ReentryControllerTest(unittest.TestCase):
 
     def test_adc_center_requires_consecutive_confirmation(self):
         controller = ReentryController()
-        controller._alignment = IrAlignmentModel(window=1)
+        controller._alignment = configured_alignment_model(window=1)
         self.trigger_fall(controller, ir_states(front=True))
 
         for index in range(IR_ALIGNMENT_CONFIRM - 1):
@@ -249,7 +284,7 @@ class ReentryControllerTest(unittest.TestCase):
 
     def test_adc_weak_signal_uses_bounded_approach_pulses(self):
         controller = ReentryController()
-        controller._alignment = IrAlignmentModel(window=1)
+        controller._alignment = configured_alignment_model(window=1)
         self.trigger_fall(controller, ir_states(front=True))
         now = 0.10
 
@@ -286,7 +321,7 @@ class ReentryControllerTest(unittest.TestCase):
         )
         for filename, expected in cases:
             with self.subTest(filename=filename):
-                model = IrAlignmentModel()
+                model = configured_alignment_model()
                 ready_positions = []
                 path = os.path.join(ROOT, "data", filename)
                 with open(path, newline="", encoding="utf-8-sig") as handle:

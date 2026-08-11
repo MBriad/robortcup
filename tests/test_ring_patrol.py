@@ -11,6 +11,17 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from config import (
+    GRAY_ADC_MAX,
+    GRAY_CENTER_REFERENCE,
+    GRAY_CHANNELS,
+    GRAY_EDGE_REFERENCE,
+    GRAY_FILTER_WINDOW,
+    GRAY_NEAR_EDGE_CLEAR,
+    GRAY_NEAR_EDGE_ENTER,
+    GRAY_WHITE_CLEAR,
+    GRAY_WHITE_ENTER,
+    GRAY_WHITE_REFERENCE,
+    MOTOR_TURN_CALIBRATION,
     PATROL_CRUISE_LINEAR,
     PATROL_CRUISE_TURN,
     PATROL_EDGE_AVOID_LINEAR,
@@ -20,17 +31,25 @@ from config import (
     PATROL_MEDIUM_TURN,
     PATROL_MIN_ACTIVE_SPEED,
 )
-from gray import (
-    GRAY_CENTER_REFERENCE,
-    GRAY_CHANNELS,
-    GRAY_EDGE_REFERENCE,
-    GrayRiskModel,
-    GRAY_WHITE_REFERENCE,
-)
+from gray import GrayRiskModel
 from ring_patrol import RingPatrolController
 
 
 DATA_DIR = os.path.join(ROOT, "data")
+
+
+def configured_gray_model():
+    return GrayRiskModel(
+        window=GRAY_FILTER_WINDOW,
+        edge_reference=GRAY_EDGE_REFERENCE,
+        center_reference=GRAY_CENTER_REFERENCE,
+        white_reference=GRAY_WHITE_REFERENCE,
+        white_enter=GRAY_WHITE_ENTER,
+        white_clear=GRAY_WHITE_CLEAR,
+        near_edge_enter=GRAY_NEAR_EDGE_ENTER,
+        near_edge_clear=GRAY_NEAR_EDGE_CLEAR,
+        adc_max=GRAY_ADC_MAX,
+    )
 
 
 def replay(filename):
@@ -155,8 +174,13 @@ class RingPatrolTest(unittest.TestCase):
         sample["left"] = GRAY_WHITE_REFERENCE["left"]
         controller = RingPatrolController()
         result = None
-        for index in range(60):
+        for index in range(5):
             result = controller.update(sample, now=index * 0.02)
+        self.assertEqual("EDGE_TURN", result["state"])
+        duration = MOTOR_TURN_CALIBRATION[PATROL_EDGE_TURN_ANGLE][1]
+        result = controller.update(
+            sample, now=controller.state_started + duration + 0.001,
+        )
         self.assertEqual("RECOVER_FORWARD", result["state"])
         self.assertEqual((400, 400), (result["left"], result["right"]))
 
@@ -273,7 +297,7 @@ class RingPatrolTest(unittest.TestCase):
             )
 
     def test_per_sensor_values_are_normalized_before_fusion(self):
-        model = GrayRiskModel()
+        model = configured_gray_model()
         observation = None
         for _ in range(3):
             observation = model.update(raw_at_zone(0.40))

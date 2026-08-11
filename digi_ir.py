@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """六路数字红外的位映射与数据注入，不持有硬件。"""
 
-# ---------- 参数（config.py 仅做汇总；本模块不依赖其他项目模块） ----------
+# ---------- 独立默认值；生产/dev 运行时由 config.py 注入 ----------
 # 板子引脚号（用户已确认接线；位号 DIGI_IR_BITS 需 scan 实测确认）。
 DIGI_IR_PINS = {
     "left_rear": 100,     # 左后
@@ -41,8 +41,10 @@ class DigiIR:
     read_states() 返回 {left_rear..front: bool, valid: bool}；无效掩码 → valid=False。
     """
 
-    def __init__(self, io_reader=None):
+    def __init__(self, io_reader=None, bits=None, active_level=ACTIVE_LEVEL):
         self._reader = io_reader
+        self.bits = dict(DIGI_IR_BITS if bits is None else bits)
+        self.active_level = int(active_level)
 
     def read_states(self, io=None):
         if io is None:
@@ -51,14 +53,14 @@ class DigiIR:
             io = self._reader()
         bits = _to_bits(io)
         if bits is None:
-            return {name: False for name in DIGI_IR_PINS} | {"valid": False}
+            return {name: False for name in self.bits} | {"valid": False}
         out = {}
         valid = True
-        for name, bit in DIGI_IR_BITS.items():
+        for name, bit in self.bits.items():
             if not 0 <= bit < 8:
                 out[name] = False
                 valid = False
             else:
-                out[name] = bits[bit] == ACTIVE_LEVEL
+                out[name] = bits[bit] == self.active_level
         out["valid"] = valid
         return out

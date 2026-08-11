@@ -5,6 +5,15 @@
 import time
 
 from config import (
+    GRAY_ADC_MAX,
+    GRAY_CENTER_REFERENCE,
+    GRAY_EDGE_REFERENCE,
+    GRAY_FILTER_WINDOW,
+    GRAY_NEAR_EDGE_CLEAR,
+    GRAY_NEAR_EDGE_ENTER,
+    GRAY_WHITE_CLEAR,
+    GRAY_WHITE_ENTER,
+    GRAY_WHITE_REFERENCE,
     MOTOR_TURN_CALIBRATION,
     PATROL_COMMAND_LIMIT,
     PATROL_CRUISE_LINEAR,
@@ -32,7 +41,17 @@ class RingPatrolController:
     """输入四路灰度，输出左右轮速度；不持有硬件。"""
 
     def __init__(self):
-        self.model = GrayRiskModel()
+        self.model = GrayRiskModel(
+            window=GRAY_FILTER_WINDOW,
+            edge_reference=GRAY_EDGE_REFERENCE,
+            center_reference=GRAY_CENTER_REFERENCE,
+            white_reference=GRAY_WHITE_REFERENCE,
+            white_enter=GRAY_WHITE_ENTER,
+            white_clear=GRAY_WHITE_CLEAR,
+            near_edge_enter=GRAY_NEAR_EDGE_ENTER,
+            near_edge_clear=GRAY_NEAR_EDGE_CLEAR,
+            adc_max=GRAY_ADC_MAX,
+        )
         self.state = "WARMUP"
         self.state_started = 0.0
         self.command = (0, 0)

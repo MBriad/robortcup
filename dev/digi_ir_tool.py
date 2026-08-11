@@ -13,7 +13,12 @@ if ROOT in sys.path:
     sys.path.remove(ROOT)
 sys.path.insert(0, ROOT)
 
-from digi_ir import ACTIVE_LEVEL, DIGI_IR_PINS, DigiIR  # noqa: E402
+from config import (  # noqa: E402
+    DIGI_IR_ACTIVE_LEVEL,
+    DIGI_IR_BITS,
+    DIGI_IR_PINS,
+)
+from digi_ir import DigiIR  # noqa: E402
 
 
 POLL_INTERVAL = 0.5
@@ -40,7 +45,7 @@ def _to_bits(mask):
 def scan(hardware):
     pins = ", ".join("%s=%d" % item for item in DIGI_IR_PINS.items())
     print("扫描 8 位 IO（%s；ACTIVE_LEVEL=%d）（Ctrl+C 退出）" % (
-        pins, ACTIVE_LEVEL))
+        pins, DIGI_IR_ACTIVE_LEVEL))
     try:
         while True:
             bits = _to_bits(hardware.ADC_IO_GetAllInputLevel())
@@ -56,7 +61,7 @@ def scan(hardware):
 
 
 def collect(hardware, out, hz, duration):
-    sensor = DigiIR()
+    sensor = DigiIR(bits=DIGI_IR_BITS, active_level=DIGI_IR_ACTIVE_LEVEL)
     period = 1.0 / hz
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     fields = (

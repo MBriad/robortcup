@@ -16,9 +16,17 @@ sys.path.insert(0, ROOT)
 from config import (  # noqa: E402
     CHASSIS_MOTOR_INVERT,
     CHASSIS_MOTOR_SWAP,
+    DIGI_IR_ACTIVE_LEVEL,
+    DIGI_IR_BITS,
+    DIGI_IR_PINS,
+    GRAY_ADC_MAX,
+    GRAY_CHANNELS,
+    GRAY_WHITE_ENTER,
+    IR_ADC_MAX,
+    IR_CHANNELS,
     PATROL_STALE_SECONDS,
 )
-from digi_ir import DIGI_IR_PINS, DigiIR  # noqa: E402
+from digi_ir import DigiIR  # noqa: E402
 from gray import GrayRiskModel, GraySensor  # noqa: E402
 from ir import IrSensor  # noqa: E402
 from reentry import ReentryController  # noqa: E402
@@ -38,9 +46,22 @@ def run(args):
         motor_invert=args.motor_invert,
         motor_swap=args.motor_swap,
     )
-    gray_sensor = GraySensor(adc_reader=lambda: hardware.adc_data)
-    digi = DigiIR(io_reader=lambda: hardware.io_data)
-    analog_sensor = IrSensor(adc_reader=lambda: hardware.adc_data)
+    gray_sensor = GraySensor(
+        adc_reader=lambda: hardware.adc_data,
+        channels=GRAY_CHANNELS,
+        adc_max=GRAY_ADC_MAX,
+        white_enter=GRAY_WHITE_ENTER,
+    )
+    digi = DigiIR(
+        io_reader=lambda: hardware.io_data,
+        bits=DIGI_IR_BITS,
+        active_level=DIGI_IR_ACTIVE_LEVEL,
+    )
+    analog_sensor = IrSensor(
+        adc_reader=lambda: hardware.adc_data,
+        channels=IR_CHANNELS,
+        adc_max=IR_ADC_MAX,
+    )
     reentry = ReentryController(force_fall=args.force_trigger)
     if args.force_trigger:
         print("强制触发模式：启动后自动触发一次状态机（台架测试；真实掉台不要传此参数）")

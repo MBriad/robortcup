@@ -1,33 +1,62 @@
-"""项目参数汇总。
+"""真机运行参数统一入口；生产与 dev 程序只从这里取可调参数。"""
 
-灰度参数的唯一来源在 gray.py；本文件汇总跨模块使用的参数与巡台电机初值。
-"""
+# ---------- 传感器接线 ----------
+GRAY_CHANNELS = {
+    "front": 2,
+    "rear": 3,
+    "left": 0,
+    "right": 1,
+}
+IR_CHANNELS = {
+    "left": 5,
+    "right": 4,
+}
+DIGI_IR_PINS = {
+    "left_rear": 100,
+    "left_front": 101,
+    "right_rear": 102,
+    "right_front": 103,
+    "rear": 104,
+    "front": 105,
+}
+DIGI_IR_BITS = {
+    "left_rear": 2,
+    "left_front": 0,
+    "right_rear": 3,
+    "right_front": 1,
+    "rear": 5,
+    "front": 4,
+}
+DIGI_IR_ACTIVE_LEVEL = 0
+GRAY_ADC_MAX = 10000.0
+IR_ADC_MAX = 10000.0
 
-from gray import (  # noqa: F401
-    GRAY_CENTER_REFERENCE,
-    GRAY_CHANNELS,
-    GRAY_EDGE_REFERENCE,
-    GRAY_FILTER_WINDOW,
-    GRAY_NEAR_EDGE_CLEAR,
-    GRAY_NEAR_EDGE_ENTER,
-    GRAY_WHITE_CLEAR,
-    GRAY_WHITE_ENTER,
-    GRAY_WHITE_REFERENCE,
-)
+# ---------- 灰度模型（来源：data/gray_model.csv） ----------
+GRAY_FILTER_WINDOW = 3
+GRAY_EDGE_REFERENCE = {
+    "front": 666.0, "rear": 798.0, "left": 458.0, "right": 1143.0,
+}
+GRAY_CENTER_REFERENCE = {
+    "front": 1033.5, "rear": 1257.0, "left": 817.0, "right": 1622.0,
+}
+GRAY_WHITE_REFERENCE = {
+    "front": 1924.0, "rear": 2283.0, "left": 1625.0, "right": 2507.0,
+}
+GRAY_WHITE_ENTER = {
+    "front": 1798.0, "rear": 2154.0, "left": 1508.0, "right": 2395.0,
+}
+GRAY_WHITE_CLEAR = {
+    "front": 1731.0, "rear": 2085.0, "left": 1445.0, "right": 2337.0,
+}
+GRAY_NEAR_EDGE_ENTER = 0.50
+GRAY_NEAR_EDGE_CLEAR = 0.65
 
-from ir import (  # noqa: F401
-    IR_ALIGNMENT_CONFIRM,
-    IR_ALIGNMENT_DIFF_HIGH,
-    IR_ALIGNMENT_DIFF_LOW,
-    IR_ALIGNMENT_FILTER_WINDOW,
-    IR_ALIGNMENT_SIGNAL_MIN,
-    IR_CHANNELS,
-)
-
-from digi_ir import (  # noqa: F401
-    DIGI_IR_BITS,
-    DIGI_IR_PINS,
-)
+# ---------- 前头 ADC 对齐（来源：data/front_adc_model.csv） ----------
+IR_ALIGNMENT_FILTER_WINDOW = 9
+IR_ALIGNMENT_DIFF_LOW = 331.0
+IR_ALIGNMENT_DIFF_HIGH = 497.0
+IR_ALIGNMENT_CONFIRM = 3
+IR_ALIGNMENT_SIGNAL_MIN = 377.0
 
 # 来源：data/motor_linear_calibration.csv。真机确认整体反向，400 以下不能可靠驱动。
 CHASSIS_MOTOR_INVERT = True
@@ -69,3 +98,12 @@ PATROL_RECOVER_MIN_IMPROVEMENT = 0.03
 PATROL_WHITE_CONFIRM = 2
 PATROL_NEAR_CONFIRM = 3
 PATROL_STALE_SECONDS = 0.20
+
+# ---------- 掉台回归 ----------
+REENTRY_FALL_CONFIRM = 3
+REENTRY_CORRECT_TURN_SPEED = PATROL_MIN_ACTIVE_SPEED
+REENTRY_CORRECT_TIMEOUT = 3.0
+REENTRY_APPROACH_SPEED = PATROL_MIN_ACTIVE_SPEED
+REENTRY_APPROACH_PULSE_SECONDS = 0.30
+REENTRY_APPROACH_LIMIT = 3
+REENTRY_REVERSE_TIMEOUT = 3.0

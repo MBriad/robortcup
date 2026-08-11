@@ -13,7 +13,12 @@ if ROOT in sys.path:
     sys.path.remove(ROOT)
 sys.path.insert(0, ROOT)
 
-from gray import GRAY_CHANNELS, GraySensor  # noqa: E402
+from config import (  # noqa: E402
+    GRAY_ADC_MAX,
+    GRAY_CHANNELS,
+    GRAY_WHITE_ENTER,
+)
+from gray import GraySensor  # noqa: E402
 
 
 POLL_INTERVAL = 0.5
@@ -32,7 +37,11 @@ def _open_up():
 
 
 def scan(hardware):
-    sensor = GraySensor()
+    sensor = GraySensor(
+        channels=GRAY_CHANNELS,
+        adc_max=GRAY_ADC_MAX,
+        white_enter=GRAY_WHITE_ENTER,
+    )
     channels = ", ".join(
         "%s=adc%d" % (name, GRAY_CHANNELS[name])
         for name in ("front", "rear", "left", "right")
@@ -53,7 +62,11 @@ def scan(hardware):
 
 
 def collect(hardware, out, hz, duration):
-    sensor = GraySensor()
+    sensor = GraySensor(
+        channels=GRAY_CHANNELS,
+        adc_max=GRAY_ADC_MAX,
+        white_enter=GRAY_WHITE_ENTER,
+    )
     period = 1.0 / hz
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     start = time.monotonic()
