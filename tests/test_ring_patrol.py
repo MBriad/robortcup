@@ -3,7 +3,12 @@
 
 import csv
 import os
+import sys
 import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from config import (
     PATROL_CRUISE_LINEAR,
@@ -25,7 +30,7 @@ from gray import (
 from ring_patrol import RingPatrolController
 
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.path.join(ROOT, "data")
 
 
 def replay(filename):

@@ -8,6 +8,7 @@ import os
 import statistics
 from collections import deque
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 NAMES = ("front", "rear", "left", "right")
 FILES = {
@@ -153,9 +154,11 @@ def write_summary(path, groups, model):
 
 def main():
     parser = argparse.ArgumentParser(description="重算四路灰度巡台模型")
-    parser.add_argument("--data-dir", default="data")
-    parser.add_argument("--out", default="data/gray_model.csv")
-    parser.add_argument("--summary", default="data/gray_model_summary.csv")
+    parser.add_argument("--data-dir", default=os.path.join(ROOT, "data"))
+    parser.add_argument("--out", default=os.path.join(ROOT, "data", "gray_model.csv"))
+    parser.add_argument(
+        "--summary", default=os.path.join(ROOT, "data", "gray_model_summary.csv")
+    )
     args = parser.parse_args()
 
     groups = load_groups(args.data_dir)

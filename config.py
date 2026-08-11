@@ -15,6 +15,20 @@ from gray import (  # noqa: F401
     GRAY_WHITE_REFERENCE,
 )
 
+from ir import (  # noqa: F401
+    IR_ALIGNMENT_CONFIRM,
+    IR_ALIGNMENT_DIFF_HIGH,
+    IR_ALIGNMENT_DIFF_LOW,
+    IR_ALIGNMENT_FILTER_WINDOW,
+    IR_ALIGNMENT_SIGNAL_MIN,
+    IR_CHANNELS,
+)
+
+from digi_ir import (  # noqa: F401
+    DIGI_IR_BITS,
+    DIGI_IR_PINS,
+)
+
 # 来源：data/motor_linear_calibration.csv。真机确认整体反向，400 以下不能可靠驱动。
 CHASSIS_MOTOR_INVERT = True
 CHASSIS_MOTOR_SWAP = False
@@ -37,11 +51,11 @@ PATROL_COMMAND_LIMIT = 1023
 MOTOR_TURN_CALIBRATION = {
     22.5: (400, 0.6),
     45.0: (500, 0.6),
-    90.0: (500, 0.8),
+    90.0: (500, 1),
     112.5: (600, 0.8),
     135.0: (600, 0.9),
     165.0: (600, 1.0),
-    180.0: (625, 1.0),
+    180.0: (625, 1.2),
     225.0: (700, 1.0),
     360.0: (725, 1.4),
 }

@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""擂台巡台策略：灰度变暗时移动避让，危险边缘只直线撤离或停车。"""
+"""擂台巡台策略：输入注入的灰度数据，输出左右轮速度，不持有硬件。"""
 
-import argparse
-import csv
-import os
 import time
 
 from config import (
-    CHASSIS_MOTOR_INVERT,
-    CHASSIS_MOTOR_SWAP,
     MOTOR_TURN_CALIBRATION,
     PATROL_COMMAND_LIMIT,
     PATROL_CRUISE_LINEAR,
@@ -26,15 +21,11 @@ from config import (
     PATROL_RECOVER_MIN_IMPROVEMENT,
     PATROL_RECOVER_SECONDS,
     PATROL_RECOVER_SPEED,
-    PATROL_STALE_SECONDS,
     PATROL_WHITE_CONFIRM,
     PATROL_WHITE_ESCAPE_SECONDS,
     PATROL_WHITE_ESCAPE_SPEED,
 )
-from gray import GrayRiskModel, GraySensor
-
-
-DEV_MODE = True
+from gray import GrayRiskModel
 
 
 class RingPatrolController:
@@ -280,91 +271,3 @@ class RingPatrolController:
             "turn_risk": turn_risk,
             "observation": observation,
         }
-
-
-def _default_log_path():
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    return os.path.join("data", "patrol_%s.csv" % stamp)
-
-
-def run_dev(args):
-    from up_controller import UpController
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.log)), exist_ok=True)
-    controller = UpController(
-        poll_hz=args.hz,
-        motor_invert=args.motor_invert,
-        motor_swap=args.motor_swap,
-    )
-    sensor = GraySensor(adc_reader=lambda: controller.adc_data)
-    patrol = RingPatrolController()
-    fields = ("t", "front", "rear", "left", "right", "zone_front", "zone_rear",
-              "zone_left", "zone_right", "zone_score", "white_hits", "state",
-              "reason", "risk_sensor", "linear_risk", "turn_risk", "near_edge",
-              "speed_level", "turn_angle", "turn_direction",
-              "turn_duration", "left_cmd", "right_cmd", "healthy")
-    start = time.monotonic()
-    period = 1.0 / args.hz
-    try:
-        with open(args.log, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fields)
-            writer.writeheader()
-            while not args.seconds or time.monotonic() - start < args.seconds:
-                loop_start = time.monotonic()
-                raw = sensor.read_raw()
-                healthy = controller.healthy and not controller.stale(PATROL_STALE_SECONDS)
-                result = patrol.update(raw, now=loop_start, healthy=healthy)
-                controller.move_cmd(result["left"], result["right"])
-                observation = result["observation"]
-                writer.writerow({
-                    "t": round(loop_start - start, 3),
-                    **{name: raw[name] for name in GrayRiskModel.NAMES},
-                    **{"zone_" + name: round(observation["zone"][name], 4)
-                       for name in GrayRiskModel.NAMES},
-                    "zone_score": round(observation["zone_score"], 4),
-                    "white_hits": "/".join(observation["white_hits"]),
-                    "state": result["state"],
-                    "reason": result["reason"],
-                    "risk_sensor": result["risk_sensor"],
-                    "linear_risk": round(result["linear_risk"], 4),
-                    "turn_risk": round(result["turn_risk"], 4),
-                    "near_edge": int(observation["near_edge"]),
-                    "speed_level": result["speed_level"],
-                    "turn_angle": result["turn_angle"],
-                    "turn_direction": result["turn_direction"],
-                    "turn_duration": result["turn_duration"],
-                    "left_cmd": result["left"],
-                    "right_cmd": result["right"],
-                    "healthy": int(healthy),
-                })
-                handle.flush()
-                time.sleep(max(0.0, period - (time.monotonic() - loop_start)))
-    except KeyboardInterrupt:
-        pass
-    finally:
-        controller.close()
-    print("巡台日志：%s" % args.log)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="灰度闭环擂台巡台")
-    parser.add_argument("--hz", type=float, default=50.0)
-    parser.add_argument("--seconds", type=float, default=0.0)
-    parser.add_argument("--log", default=_default_log_path())
-    parser.set_defaults(
-        motor_invert=CHASSIS_MOTOR_INVERT,
-        motor_swap=CHASSIS_MOTOR_SWAP,
-    )
-    parser.add_argument("--motor-invert", dest="motor_invert", action="store_true")
-    parser.add_argument("--no-motor-invert", dest="motor_invert", action="store_false")
-    parser.add_argument("--motor-swap", dest="motor_swap", action="store_true")
-    parser.add_argument("--no-motor-swap", dest="motor_swap", action="store_false")
-    args = parser.parse_args()
-    if not DEV_MODE:
-        print("DEV_MODE=False：请在生产程序中注入灰度值并调用 RingPatrolController.update")
-        return
-    run_dev(args)
-
-
-if __name__ == "__main__":
-    main()

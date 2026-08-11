@@ -3,10 +3,15 @@
 
 import csv
 import os
+import sys
 import unittest
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 from config import MOTOR_TURN_CALIBRATION, PATROL_RECOVER_STEP_CM
-from motor_test import DEFAULT_SPEED, MIN_SPEED, build_cases
+from tests.motor_test import DEFAULT_SPEED, MIN_SPEED, build_cases
 
 
 class MotorDirectionTest(unittest.TestCase):
@@ -27,7 +32,7 @@ class MotorDirectionTest(unittest.TestCase):
         self.assertGreaterEqual(DEFAULT_SPEED, MIN_SPEED)
 
     def test_turn_calibration_csv_matches_config(self):
-        path = os.path.join(os.path.dirname(__file__), "data", "motor_turn_calibration.csv")
+        path = os.path.join(ROOT, "data", "motor_turn_calibration.csv")
         by_direction = {"left": {}, "right": {}}
         with open(path, newline="", encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
@@ -38,7 +43,7 @@ class MotorDirectionTest(unittest.TestCase):
         self.assertEqual(MOTOR_TURN_CALIBRATION, by_direction["right"])
 
     def test_linear_calibration_csv_matches_recover_step(self):
-        path = os.path.join(os.path.dirname(__file__), "data", "motor_linear_calibration.csv")
+        path = os.path.join(ROOT, "data", "motor_linear_calibration.csv")
         with open(path, newline="", encoding="utf-8-sig") as handle:
             rows = list(csv.DictReader(handle))
 

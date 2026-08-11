@@ -5,7 +5,12 @@
 import argparse
 import csv
 import os
+import sys
 import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from config import CHASSIS_MOTOR_INVERT, CHASSIS_MOTOR_SWAP
 
@@ -30,7 +35,7 @@ def build_cases(speed):
 
 def default_log_path():
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    return os.path.join("data", "motor_test_%s.csv" % stamp)
+    return os.path.join(ROOT, "data", "motor_test_%s.csv" % stamp)
 
 
 def run_command(controller, left, right, duration):
