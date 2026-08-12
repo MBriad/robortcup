@@ -131,11 +131,10 @@ SHOVEL_REVERSE_MIN_SECONDS = 0.3   # 最短倒车时长，防信号抖动提前�
 SHOVEL_REVERSE_TIMEOUT = 3.0       # 倒车超时兜底 → 停车待命
 
 # ---------- YOLO 能量块对准（vision_tracker.py；初值待 dev/vision_tracker.py CSV 标定） ----------
-VISION_IMAGE_WIDTH = 320            # YOLO 输出横坐标基准；先用部署模型输入宽度
 VISION_LOOP_HZ = 50.0               # 电机安全轮询频率；YOLO 实际约 8 FPS
 VISION_MAX_AGE_MS = 450             # 超过约 3 帧周期仍无新结果，立即停车
 VISION_ERROR_FILTER_ALPHA = 0.45    # 横向归一化误差 EMA，新数据权重
-VISION_DEAD_ZONE = 0.10             # 中心左右各 16 px 内停止转向
+VISION_DEAD_ZONE = 0.04             # 归一化死区；640 宽画面约为中心左右各 13 px
 VISION_TURN_KP = 600.0              # 归一化横向误差到原地转向速度
 VISION_TURN_MIN_SPEED = 400         # 实测电机可靠动作下限
 VISION_TURN_MAX_SPEED = 600         # 首轮地面测试限速，避免 8 FPS 下转过头
