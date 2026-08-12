@@ -8,7 +8,7 @@
 | 文件 | 说明 |
 |---|---|
 | `shovel_guard.py` | 状态机模块（`ShovelGuard`）——**要分享的核心算法** |
-| `config.py` | 参数文件（`SHOVEL_*` 为铲子部分，其他参数与本模块无关可忽略） |
+| `config.py` | 参数文件（**精简版**，只含 `SHOVEL_*`，无其他模块参数） |
 | `__init__.py` | 包导出（可选，方便 `from shovel_pack import ShovelGuard`） |
 
 **依赖**：`shovel_guard.py` → `config.py`（纯参数，无 import）+ Python 标准库。不需要任何硬件库。
