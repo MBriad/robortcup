@@ -33,8 +33,8 @@ from config import (
 from gray import GrayRiskModel
 from ir import IrAlignmentModel
 from reentry import (
-    APPROACH_LIMIT,
-    APPROACH_PULSE_SECONDS,
+    APPROACH_SPEED,
+    APPROACH_TIMEOUT,
     FALL_CONFIRM,
     ReentryController,
 )
@@ -282,36 +282,49 @@ class ReentryControllerTest(unittest.TestCase):
         self.assertEqual("REVERSE", result["state"])
         self.assertEqual((-400, -400), (result["left"], result["right"]))
 
-    def test_adc_weak_signal_uses_bounded_approach_pulses(self):
+    def test_adc_weak_signal_rushes_once_then_stops_on_timeout(self):
         controller = ReentryController()
         controller._alignment = configured_alignment_model(window=1)
         self.trigger_fall(controller, ir_states(front=True))
-        now = 0.10
 
-        for expected_count in range(1, APPROACH_LIMIT + 1):
-            result = controller.update(
-                fallen_gray(), ir_states(front=True), ANALOG_WEAK,
-                now=now, healthy=True,
-            )
-            self.assertEqual("ADC_APPROACH", result["state"])
-            self.assertEqual((400, 400), (result["left"], result["right"]))
-            self.assertEqual(expected_count, controller._approach_count)
-
-            now = controller._state_started + APPROACH_PULSE_SECONDS + 0.001
-            result = controller.update(
-                fallen_gray(), ir_states(), ANALOG_WEAK,
-                now=now, healthy=True,
-            )
-            self.assertEqual("ADC_CORRECT", result["state"])
-            self.assertEqual((0, 0), (result["left"], result["right"]))
-            now += 0.001
-
+        # 信号弱：一次性大力前冲（不循环重试）
         result = controller.update(
             fallen_gray(), ir_states(front=True), ANALOG_WEAK,
-            now=now, healthy=True,
+            now=0.10, healthy=True,
+        )
+        self.assertEqual("ADC_APPROACH", result["state"])
+        self.assertEqual((APPROACH_SPEED, APPROACH_SPEED),
+                         (result["left"], result["right"]))
+
+        # 超时未贴墙：直接停车，不再回矫正重试
+        result = controller.update(
+            fallen_gray(), ir_states(front=True), ANALOG_WEAK,
+            now=0.10 + APPROACH_TIMEOUT + 0.001, healthy=True,
         )
         self.assertEqual("SAFE_STOP", result["state"])
         self.assertEqual((0, 0), (result["left"], result["right"]))
+
+    def test_adc_approach_stops_when_wall_touched(self):
+        controller = ReentryController()
+        controller._alignment = configured_alignment_model(window=1)
+        self.trigger_fall(controller, ir_states(front=True))
+
+        result = controller.update(
+            fallen_gray(), ir_states(front=True), ANALOG_WEAK,
+            now=0.10, healthy=True,
+        )
+        self.assertEqual("ADC_APPROACH", result["state"])
+        self.assertEqual((APPROACH_SPEED, APPROACH_SPEED),
+                         (result["left"], result["right"]))
+
+        touched = {"left": 1200.0, "right": 1200.0, "valid": True}
+        result = controller.update(
+            fallen_gray(), ir_states(front=True), touched,
+            now=0.11, healthy=True,
+        )
+        self.assertEqual("ADC_CORRECT", result["state"])
+        self.assertEqual((0, 0), (result["left"], result["right"]))
+        self.assertIn("贴墙", result["reason"])
 
     def test_real_front_adc_csvs_match_calibrated_positions(self):
         cases = (
@@ -382,10 +395,11 @@ class ReentryControllerTest(unittest.TestCase):
             fallen_gray(), ir_states(front=True), ANALOG_CENTERED,
             now=started + duration + 0.001, healthy=True,
         )
-        self.assertEqual("ADC_CORRECT", result["state"])
-        self.assertEqual((0, 0), (result["left"], result["right"]))
+        self.assertEqual("ADC_APPROACH", result["state"])
+        self.assertEqual((APPROACH_SPEED, APPROACH_SPEED),
+                         (result["left"], result["right"]))
 
-    def test_turn_completion_starts_adc_without_front_ir(self):
+    def test_turn_completion_starts_approach_without_front_ir(self):
         controller = ReentryController()
         self.trigger_fall(controller, ir_states(right_front=True))
         duration = MOTOR_TURN_CALIBRATION[90.0][1]
@@ -395,8 +409,9 @@ class ReentryControllerTest(unittest.TestCase):
             now=controller._state_started + duration + 0.001,
             healthy=True,
         )
-        self.assertEqual("ADC_CORRECT", result["state"])
-        self.assertEqual((0, 0), (result["left"], result["right"]))
+        self.assertEqual("ADC_APPROACH", result["state"])
+        self.assertEqual((APPROACH_SPEED, APPROACH_SPEED),
+                         (result["left"], result["right"]))
 
 
 if __name__ == "__main__":

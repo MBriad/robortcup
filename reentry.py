@@ -11,10 +11,12 @@
     WAIT（掉台触发：四路 zone 全 <0 连续 FALL_CONFIRM 帧）
       → 前头有值：ADC_CORRECT；正后：TURN_180；右侧任一：TURN_RIGHT_90；
         左侧任一：TURN_LEFT_90；全无值：IR_WAIT（有值后重新分派）
-      → 转向按标定时长完整执行；完成后停车并进入 ADC_CORRECT，
-        不使用前头数字红外门控模拟 ADC
+      → 转向按标定时长完整执行；完成后直接大力前冲撞墙（ADC_APPROACH，
+        信号弱时也会冲，不循环重试）
+      → ADC_APPROACH：一次性大力前冲（APPROACH_SPEED），前头模拟红外
+        signal≥APPROACH_TOUCH_SIGNAL 判定贴墙 → 立即停车进 ADC_CORRECT；
+        超时 APPROACH_TIMEOUT 未贴墙 → SAFE_STOP
       → ADC_CORRECT：9 帧中值滤波后按校准区间原地转，连续确认正对
-        信号过弱 → ADC_APPROACH：短距离前进后停车并重新采样（最多 3 次）
         （超时 CORRECT_TIMEOUT → SAFE_STOP）
       → REVERSE：倒车直到前头红外无值（超时 REVERSE_TIMEOUT → SAFE_STOP）
       → SAFE_STOP：灰度恢复（人工/后续上台）后回 WAIT
@@ -43,13 +45,13 @@ from config import (
     IR_ALIGNMENT_SIGNAL_MIN,
     MOTOR_TURN_CALIBRATION,
     PATROL_COMMAND_LIMIT,
-    PATROL_RECOVER_SPEED,
-    REENTRY_APPROACH_LIMIT as APPROACH_LIMIT,
-    REENTRY_APPROACH_PULSE_SECONDS as APPROACH_PULSE_SECONDS,
     REENTRY_APPROACH_SPEED as APPROACH_SPEED,
+    REENTRY_APPROACH_TIMEOUT as APPROACH_TIMEOUT,
+    REENTRY_APPROACH_TOUCH_SIGNAL as APPROACH_TOUCH_SIGNAL,
     REENTRY_CORRECT_TIMEOUT as CORRECT_TIMEOUT,
     REENTRY_CORRECT_TURN_SPEED as CORRECT_TURN_SPEED,
     REENTRY_FALL_CONFIRM as FALL_CONFIRM,
+    REENTRY_REVERSE_SPEED as REVERSE_SPEED,
     REENTRY_REVERSE_TIMEOUT as REVERSE_TIMEOUT,
 )
 from gray import GrayRiskModel
@@ -96,7 +98,6 @@ class ReentryController:
         self._turn_angle = 0.0
         self._turn_duration = 0.0
         self._correct_count = 0
-        self._approach_count = 0
 
     # ---------- 状态迁移 ----------
     def _enter(self, state, now, command, reason):
@@ -133,26 +134,22 @@ class ReentryController:
     def _start_correct(self, now, reason):
         self._alignment.reset()
         self._correct_count = 0
-        self._approach_count = 0
         self._enter("ADC_CORRECT", now, (0, 0), reason)
 
-    def _start_approach(self, now, signal):
-        self._approach_count += 1
+    def _start_approach(self, now, reason):
+        """一次性大力前冲撞墙；贴墙（signal 满值）或超时即结束，不循环重试。"""
         self._enter(
-            "ADC_APPROACH", now, (APPROACH_SPEED, APPROACH_SPEED),
-            "ADC 信号弱 %.0f，靠墙脉冲 %d/%d" % (
-                signal, self._approach_count, APPROACH_LIMIT,
-            ),
+            "ADC_APPROACH", now, (APPROACH_SPEED, APPROACH_SPEED), reason,
         )
 
-    def _finish_approach(self, now):
+    def _finish_approach(self, now, reason):
         self._alignment.reset()
         self._correct_count = 0
-        self._enter("ADC_CORRECT", now, (0, 0), "靠墙脉冲完成，重新采样")
+        self._enter("ADC_CORRECT", now, (0, 0), reason)
 
     def _start_reverse(self, now, reason):
         self._enter("REVERSE", now,
-                    (-PATROL_RECOVER_SPEED, -PATROL_RECOVER_SPEED), reason)
+                    (-REVERSE_SPEED, -REVERSE_SPEED), reason)
 
     @staticmethod
     def _mix(linear, turn):
@@ -204,7 +201,7 @@ class ReentryController:
 
         if self.state in ("TURN_180", "TURN_LEFT_90", "TURN_RIGHT_90"):
             if elapsed >= self._turn_duration:
-                self._start_correct(now, "定时转向完成，停车后进入 ADC 评估")
+                self._start_approach(now, "定时转向完成，大力前冲撞墙")
             return self._result(obs)
 
         if self.state == "ADC_CORRECT":
@@ -221,13 +218,9 @@ class ReentryController:
                 return self._result(obs)
 
             if not alignment["strong"]:
-                if self._approach_count >= APPROACH_LIMIT:
-                    self._enter(
-                        "SAFE_STOP", now, (0, 0),
-                        "靠墙 %d 次后 ADC 信号仍弱" % APPROACH_LIMIT,
-                    )
-                else:
-                    self._start_approach(now, alignment["signal"])
+                # 信号弱（前头数字红外亮但模拟信号不足）：一次性大力冲撞，不循环
+                self._start_approach(
+                    now, "ADC 信号弱 %.0f，大力前冲撞墙" % alignment["signal"])
                 return self._result(obs)
 
             d = alignment["diff"]
@@ -251,8 +244,12 @@ class ReentryController:
             return self._result(obs)
 
         if self.state == "ADC_APPROACH":
-            if elapsed >= APPROACH_PULSE_SECONDS:
-                self._finish_approach(now)
+            if analog.get("valid") and max(
+                    analog["left"], analog["right"]) >= APPROACH_TOUCH_SIGNAL:
+                # 前头红外 signal 已达贴墙阈值：立即停车防堵转，回矫正
+                self._finish_approach(now, "大力冲撞贴墙，停车矫正")
+            elif elapsed >= APPROACH_TIMEOUT:
+                self._enter("SAFE_STOP", now, (0, 0), "大力冲撞超时未贴墙，停车")
             return self._result(obs)
 
         if self.state == "REVERSE":
