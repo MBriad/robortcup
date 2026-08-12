@@ -1,0 +1,6 @@
+#!/bin/sh
+exec /opt/rpi-yolo/vision_service_cpp \
+    --param /opt/rpi-yolo/model/model.ncnn.param \
+    --bin /opt/rpi-yolo/model/model.ncnn.bin \
+    "$@"
+

@@ -1,0 +1,6 @@
+#!/bin/sh
+exec /usr/local/bin/rpi-yolo \
+    --preview-port 8080 \
+    --preview-every 2 \
+    "$@"
+

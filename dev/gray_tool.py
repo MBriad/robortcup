@@ -18,12 +18,18 @@ from config import (  # noqa: E402
     GRAY_CHANNELS,
     GRAY_WHITE_ENTER,
 )
+from dev import prompt_output_path  # noqa: E402
 from gray import GraySensor  # noqa: E402
 
 
 POLL_INTERVAL = 0.5
 SAMPLE_RATES = (10, 50)
 DEFAULT_HZ = 50
+
+
+def _default_output_path():
+    filename = time.strftime("gray_%Y%m%d_%H%M%S.csv")
+    return os.path.join(ROOT, "data", filename)
 
 
 def _open_up():
@@ -102,11 +108,14 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("scan", help="持续显示映射后的四路灰度")
     collect_parser = sub.add_parser("collect", help="采集四路灰度到 CSV")
-    collect_parser.add_argument("--out", required=True)
+    collect_parser.add_argument("--out", default=None,
+                                help="输出路径；不给则交互输入文件名")
     collect_parser.add_argument("--hz", type=int, default=DEFAULT_HZ,
                                 choices=SAMPLE_RATES)
     collect_parser.add_argument("--dur", type=float, default=0.0)
     args = parser.parse_args()
+    if args.command == "collect" and not args.out:
+        args.out = prompt_output_path(_default_output_path())
 
     hardware = _open_up()
     try:

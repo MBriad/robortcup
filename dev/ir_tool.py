@@ -14,6 +14,7 @@ if ROOT in sys.path:
 sys.path.insert(0, ROOT)
 
 from config import IR_ADC_MAX, IR_CHANNELS  # noqa: E402
+from dev import prompt_output_path  # noqa: E402
 from ir import IrSensor  # noqa: E402
 
 
@@ -111,11 +112,13 @@ def main():
     scan_parser.add_argument("--mapped", action="store_true")
     collect_parser = sub.add_parser("collect", help="采集前头 ADC 到 CSV")
     collect_parser.add_argument("--out", default=None,
-                                help="输出路径；默认写入 data/front_adc_时间.csv")
+                                help="输出路径；不给则交互输入文件名")
     collect_parser.add_argument("--hz", type=int, default=DEFAULT_HZ,
                                 choices=SAMPLE_RATES)
     collect_parser.add_argument("--dur", type=float, default=0.0)
     args = parser.parse_args()
+    if args.command == "collect" and not args.out:
+        args.out = prompt_output_path(_default_output_path())
 
     hardware = _open_up()
     try:
