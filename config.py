@@ -62,9 +62,9 @@ IR_ALIGNMENT_DIFF_HIGH = 497.0
 IR_ALIGNMENT_CONFIRM = 3
 IR_ALIGNMENT_SIGNAL_MIN = 377.0
 
-# 电机修正（up_controller.py UpController motor_invert/motor_swap 参数；
-# 来源：data/motor_linear_calibration.csv）。真机确认整体反向，400 以下不能可靠驱动。
-CHASSIS_MOTOR_INVERT = True
+# 电机修正（up_controller.py UpController motor_invert/motor_swap 参数）。
+# 新车 2026-08-13 实测：invert=False（前进后退正常）；400 以下不能可靠驱动。
+CHASSIS_MOTOR_INVERT = False
 CHASSIS_MOTOR_SWAP = False
 
 # ---------- 巡台（ring_patrol.py RingPatrolController 参数） ----------
