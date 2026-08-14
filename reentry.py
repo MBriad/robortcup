@@ -120,9 +120,10 @@ class ReentryController:
             self._enter("IR_WAIT", now, (0, 0), "掉台但六路红外暂时无值，停车等待")
 
     def _start_turn(self, now, angle, reason):
-        """原地转向：angle 正=右转、负=左转；速度/时长取 MOTOR_TURN_CALIBRATION。"""
+        """原地转向：angle 正=右转、负=左转；速度/时长按方向查 MOTOR_TURN_CALIBRATION。"""
         sign = 1.0 if angle > 0 else -1.0
-        speed, duration = MOTOR_TURN_CALIBRATION[abs(angle)]
+        table = MOTOR_TURN_CALIBRATION["right" if angle > 0 else "left"]
+        speed, duration = table[abs(angle)]
         if angle > 0:
             state = "TURN_RIGHT_90" if abs(angle) == 90.0 else "TURN_180"
         else:

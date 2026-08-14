@@ -20,7 +20,8 @@
 
 | 工具 | 用途 | 动电机 | 树莓派 |
 |---|---|:-:|:-:|
-| [tests/motor_test.py](../tests/motor_test.py) | 前进/后退/左右转方向与速度测试 | ✓ | ✓ |
+| [dev/motor_tool.py](motor_tool.py) | 前进/后退/左右转方向与速度测试 | ✓ | ✓ |
+| [dev/turn_tool.py](turn_tool.py) | 转角标定交互采集（直接转 N 度） | ✓ | ✓ |
 | [dev/motor_push_back.py](motor_push_back.py) | 逐档测倒车上台所需力度 | ✓ | ✓ |
 | [dev/gray_tool.py](gray_tool.py) | 四路灰度扫描 / 采集 | – | ✓ |
 | [dev/ir_tool.py](ir_tool.py) | 前头两路模拟红外扫描 / 采集 | – | ✓ |
@@ -41,12 +42,12 @@
 
 ## 2. 电机与底盘
 
-### 2.1 tests/motor_test.py —— 四种基本动作方向测试（换车第一件事）
+### 2.1 dev/motor_tool.py —— 四种基本动作方向测试（换车第一件事）
 
 ```bash
-python3 tests/motor_test.py all            # 全部四种动作
-python3 tests/motor_test.py forward --ground
-python3 tests/motor_test.py turn-left --speed 500 --duration 0.8
+python3 dev/motor_tool.py all            # 全部四种动作
+python3 dev/motor_tool.py forward --ground
+python3 dev/motor_tool.py turn-left --speed 500 --duration 0.8
 ```
 
 - 默认**悬空**（抬轮，确认词 `LIFTED`）；`--ground` 为着地实车动作（确认词 `GROUND`），
@@ -71,6 +72,22 @@ python3 dev/motor_push_back.py --speeds 500,700 --reverse-seconds 3
   （y/n/?），结果存 `data/motor_push_back_时间.csv`。
 - `--forward-speed / --forward-seconds` 控制准备段，`--reverse-seconds` 控制冲台时长。
 - 纯电机测试：直接开 vendor 库裸控 CDS，**不经 up_controller.py**，不读传感器。
+
+### 2.3 dev/turn_tool.py —— 转角标定交互采集（换车必测）
+
+```bash
+python3 dev/turn_tool.py                 # 按默认 10 档角度集，从缺档开始
+python3 dev/turn_tool.py --angle 90      # 只补测 90°
+```
+
+- 角度集：**10 / 22.5 / 45 / 90 / 135 / 180**（已标定，共 12 组；补测其他角度用 `--angle N`），左右转各定稿一组。
+- 每档流程：输入「速度 时长」（如 `500 1`）→ 车原地转 → 输入实测角度
+  （**回车 = 刚好到位 → 定稿**；数字 = 记录后继续调参；`r` = 原参数重跑；
+  `s` = 跳过；`q` = 保存退出）。转角与时长非线性，每个目标角独立实测，不做插值。
+- 已定稿的档会从 CSV 读取续测（断电/中断可接着跑）。
+- 产出：`data/motor_turn_calibration.csv`（单测格式 direction,angle,speed,duration）
+  + `data/motor_turn_trials_时间.csv`（每次试验明细）。
+- 定稿后同步进 config.py 的 `MOTOR_TURN_CALIBRATION`（左右两张表，按转向方向查）。
 
 ## 3. 传感器扫描与采集
 
@@ -226,8 +243,11 @@ python3 dev/vision_tracker.py --drive                # 安全确认后启用转�
 
 按顺序执行，每一步的产物都落到文件，再写回 config.py：
 
-1. **电机方向**：`tests/motor_test.py all`（先悬空后 `--ground`）→ 定
-   `CHASSIS_MOTOR_INVERT / CHASSIS_MOTOR_SWAP`。
+1. **电机方向**：`dev/motor_tool.py all`（先悬空后 `--ground`）→ 定
+   `CHASSIS_MOTOR_INVERT / CHASSIS_MOTOR_SWAP`；换车另需
+   `dev/turn_tool.py` 采转角（左右分开）→ 写 `MOTOR_TURN_CALIBRATION`，
+   及 `dev/motor_tool.py --ground forward/backward --speed 400 --duration 0.6`
+   测直线距离 → 写 `PATROL_RECOVER_STEP_CM`。
 2. **灰度巡台**：`gray_tool.py scan` 确认四路接线 → `collect` 采黑/白/边缘/武字中心/
    中轴对角轴/内环各姿态 → `calibrate_gray.py` → 写回 `GRAY_*`。
 3. **前头红外对齐**：`ir_tool.py scan` 确认接线 → `collect` 采正对/左偏/右偏

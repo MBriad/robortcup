@@ -1,0 +1,4 @@
+t,angle,direction,speed,duration,measured,result
+3082.353,22.5,left,400,1.0,,fixed
+3240.195,22.5,right,400,1.0,ignore,retry
+3281.986,22.5,right,400,1.0,,fixed

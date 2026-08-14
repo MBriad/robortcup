@@ -375,21 +375,23 @@ class ReentryControllerTest(unittest.TestCase):
             now=0.10, healthy=True,
         )
         self.assertEqual("TURN_RIGHT_90", result["state"])
-        self.assertEqual((500, -500), (result["left"], result["right"]))
+        speed = MOTOR_TURN_CALIBRATION["right"][90.0][0]
+        self.assertEqual((speed, -speed), (result["left"], result["right"]))
 
     def test_turn_uses_full_calibrated_duration_before_adc(self):
         controller = ReentryController()
         result = self.trigger_fall(controller, ir_states(right_front=True))
         self.assertEqual("TURN_RIGHT_90", result["state"])
         started = controller._state_started
-        duration = MOTOR_TURN_CALIBRATION[90.0][1]
+        duration = MOTOR_TURN_CALIBRATION["right"][90.0][1]
 
         result = controller.update(
             fallen_gray(), ir_states(front=True), ANALOG_CENTERED,
             now=started + duration - 0.001, healthy=True,
         )
         self.assertEqual("TURN_RIGHT_90", result["state"])
-        self.assertEqual((500, -500), (result["left"], result["right"]))
+        speed = MOTOR_TURN_CALIBRATION["right"][90.0][0]
+        self.assertEqual((speed, -speed), (result["left"], result["right"]))
 
         result = controller.update(
             fallen_gray(), ir_states(front=True), ANALOG_CENTERED,
@@ -402,7 +404,7 @@ class ReentryControllerTest(unittest.TestCase):
     def test_turn_completion_starts_approach_without_front_ir(self):
         controller = ReentryController()
         self.trigger_fall(controller, ir_states(right_front=True))
-        duration = MOTOR_TURN_CALIBRATION[90.0][1]
+        duration = MOTOR_TURN_CALIBRATION["right"][90.0][1]
 
         result = controller.update(
             fallen_gray(), ir_states(), ANALOG_CENTERED,

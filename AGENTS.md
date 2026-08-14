@@ -27,7 +27,8 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 - `dev/gray_tool.py` / `dev/ir_tool.py` / `dev/digi_ir_tool.py` — sensor scan and CSV collection tools; digital IR collection saves both raw IO bits and mapped states.
 - `dev/calibrate_gray.py` — offline gray-model calibration from files already stored under `data/`.
 - `tests/test_<module>.py` — PC automated unit and replay tests, run through `unittest discover`.
-- `tests/motor_test.py` — interactive real-hardware motor test; requires explicit safety confirmation and is not discovered as a unit test.
+- `dev/motor_tool.py` — interactive real-hardware motor test (forward/backward/turns); requires explicit safety confirmation and is not discovered as a unit test.
+- `dev/turn_tool.py` — interactive turn-angle calibration collector: per-target-angle speed/duration trials, writes `data/motor_turn_calibration.csv`.
 - Peripheral modules (`gray.py`, `digi_ir.py`, `ir.py`) — pure sensor conversion and injected-data interfaces; no hardware ownership or CLI.
 - `config.py` — parameter aggregation for the modules.
 
@@ -42,7 +43,8 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 - `python3 dev/ir_tool.py scan|collect ...` — analog IR scan or CSV collection.
 - `python3 dev/digi_ir_tool.py scan|collect ...` — digital IR scan or CSV collection.
 - `python3 dev/calibrate_gray.py` — rebuild gray calibration outputs from `data/`.
-- `python3 tests/motor_test.py <action> [--ground]` — interactive motor direction/speed test.
+- `python3 dev/motor_tool.py <action> [--ground]` — interactive motor direction/speed test.
+- `python3 dev/turn_tool.py [--angle N]` — interactive turn-angle calibration collection.
 - `python3 up_controller.py` — driver-level sensor direct-read self-test (real hardware).
 - PC verification uses `python3 -m unittest discover -s tests -t . -v`; real-hardware verification remains mandatory for motor direction, state transitions, and recovery distance.
 

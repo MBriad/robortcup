@@ -124,7 +124,8 @@ class RingPatrolController:
         else:
             sign = self._turn_sign
             self._turn_sign *= -1.0
-        speed, duration = MOTOR_TURN_CALIBRATION[PATROL_EDGE_TURN_ANGLE]
+        speed, duration = MOTOR_TURN_CALIBRATION[
+            "right" if sign > 0.0 else "left"][PATROL_EDGE_TURN_ANGLE]
         self.risk_sensor = self._dominant_risk(observation)
         self._enter("EDGE_TURN", now, self._mix(0, sign * speed), reason)
         self.turn_angle = PATROL_EDGE_TURN_ANGLE

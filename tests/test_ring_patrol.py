@@ -177,7 +177,8 @@ class RingPatrolTest(unittest.TestCase):
         for index in range(5):
             result = controller.update(sample, now=index * 0.02)
         self.assertEqual("EDGE_TURN", result["state"])
-        duration = MOTOR_TURN_CALIBRATION[PATROL_EDGE_TURN_ANGLE][1]
+        duration = MOTOR_TURN_CALIBRATION[controller.turn_direction][
+            PATROL_EDGE_TURN_ANGLE][1]
         result = controller.update(
             sample, now=controller.state_started + duration + 0.001,
         )

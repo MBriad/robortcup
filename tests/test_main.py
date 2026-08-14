@@ -18,6 +18,7 @@ from config import (
     IR_ALIGNMENT_DIFF_LOW,
     IR_ALIGNMENT_FILTER_WINDOW,
     IR_ALIGNMENT_SIGNAL_MIN,
+    MOTOR_TURN_CALIBRATION,
 )
 from main import RobotController
 
@@ -90,7 +91,8 @@ class RobotControllerTest(unittest.TestCase):
                 break
         self.assertEqual("reentry", result["mode"])
         self.assertEqual("TURN_RIGHT_90", result["state"])
-        self.assertEqual((500, -500), (result["left"], result["right"]))
+        speed = MOTOR_TURN_CALIBRATION["right"][90.0][0]
+        self.assertEqual((speed, -speed), (result["left"], result["right"]))
 
     def test_patrol_is_recreated_after_reentry_finishes(self):
         robot = RobotController()

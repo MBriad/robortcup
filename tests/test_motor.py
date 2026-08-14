@@ -11,8 +11,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from config import MOTOR_TURN_CALIBRATION, PATROL_RECOVER_STEP_CM
-from tests.motor_test import DEFAULT_SPEED, MIN_SPEED, build_cases
-
+from dev.motor_tool import DEFAULT_SPEED, MIN_SPEED, build_cases
 
 class MotorDirectionTest(unittest.TestCase):
     def test_four_direction_signs(self):
@@ -39,8 +38,8 @@ class MotorDirectionTest(unittest.TestCase):
                 by_direction[row["direction"]][float(row["angle"])] = (
                     int(row["speed"]), float(row["duration"])
                 )
-        self.assertEqual(MOTOR_TURN_CALIBRATION, by_direction["left"])
-        self.assertEqual(MOTOR_TURN_CALIBRATION, by_direction["right"])
+        self.assertEqual(MOTOR_TURN_CALIBRATION["left"], by_direction["left"])
+        self.assertEqual(MOTOR_TURN_CALIBRATION["right"], by_direction["right"])
 
     def test_linear_calibration_csv_matches_recover_step(self):
         path = os.path.join(ROOT, "data", "motor_linear_calibration.csv")

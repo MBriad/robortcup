@@ -1,0 +1,2 @@
+step,mode,action,description,left_cmd,right_cmd,duration,distance_cm,motor_invert,motor_swap,observed
+1,ground,forward,车体前进,600,600,2.2,240.0,0,0,correct
