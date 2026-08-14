@@ -46,9 +46,9 @@ right_cmd, duration, distance_cm, motor_invert, motor_swap, observed`。
 python3 dev/motor_tool.py all
 python3 dev/motor_tool.py all --ground
 
-# 直线标定:400 速度 1.5 秒的前进/后退实测距离(各测 3 次取均值)
-python3 dev/motor_tool.py forward  --ground --speed 400 --duration 1.5
-python3 dev/motor_tool.py backward --ground --speed 400 --duration 1.5
+# 直线标定:550 速度 1.5 秒的前进/后退实测距离(各测 3 次取均值)
+python3 dev/motor_tool.py forward  --ground --speed 550 --duration 1.5
+python3 dev/motor_tool.py backward --ground --speed 550 --duration 1.5
 ```
 
 - 方向不对:现场用 `--motor-invert` / `--motor-swap` 验证正确组合后,

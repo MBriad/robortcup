@@ -13,14 +13,14 @@ DIGI_IR_PINS = {
     "front": 105,         # 正前
 }
 # 传感器 → io_data 位号（io_data = [(mask >> i) & 1 for i in range(8)]）。
-# 2026-08-10 真机确认：IO4=前、IO0=左前、IO2=左后、IO1=右前、IO3=右后、IO5=后。
+# 新车 2026-08-14 scan 实测：IO0=前、IO3=左前、IO1=左后、IO2=右前、IO4=右后、IO6=后。
 DIGI_IR_BITS = {
-    "left_rear": 2,
-    "left_front": 0,
-    "right_rear": 3,
-    "right_front": 1,
-    "rear": 5,
-    "front": 4,
+    "left_rear": 1,
+    "left_front": 3,
+    "right_rear": 4,
+    "right_front": 2,
+    "rear": 6,
+    "front": 0,
 }
 ACTIVE_LEVEL = 0      # 检测到时 io 位为 0（低有效，真机确认）
 

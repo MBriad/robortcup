@@ -246,7 +246,7 @@ python3 dev/vision_tracker.py --drive                # 安全确认后启用转�
 1. **电机方向**：`dev/motor_tool.py all`（先悬空后 `--ground`）→ 定
    `CHASSIS_MOTOR_INVERT / CHASSIS_MOTOR_SWAP`；换车另需
    `dev/turn_tool.py` 采转角（左右分开）→ 写 `MOTOR_TURN_CALIBRATION`，
-   及 `dev/motor_tool.py --ground forward/backward --speed 400 --duration 0.6`
+   及 `dev/motor_tool.py --ground forward/backward --speed 550 --duration 1.5`
    测直线距离 → 写 `PATROL_RECOVER_STEP_CM`。
 2. **灰度巡台**：`gray_tool.py scan` 确认四路接线 → `collect` 采黑/白/边缘/武字中心/
    中轴对角轴/内环各姿态 → `calibrate_gray.py` → 写回 `GRAY_*`。

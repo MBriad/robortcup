@@ -30,6 +30,7 @@ from config import (
     PATROL_MEDIUM_LINEAR,
     PATROL_MEDIUM_TURN,
     PATROL_MIN_ACTIVE_SPEED,
+    PATROL_RECOVER_SPEED,
 )
 from gray import GrayRiskModel
 from ring_patrol import RingPatrolController
@@ -185,7 +186,8 @@ class RingPatrolTest(unittest.TestCase):
             sample, now=controller.state_started + duration + 0.001,
         )
         self.assertEqual("RECOVER_FORWARD", result["state"])
-        self.assertEqual((400, 400), (result["left"], result["right"]))
+        self.assertEqual((PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED),
+                         (result["left"], result["right"]))
 
     def test_side_gray_uses_forward_arc_before_danger(self):
         # 弧线背离暗侧：左端变暗→右转离开，右端变暗→左转离开。

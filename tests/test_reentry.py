@@ -36,6 +36,7 @@ from reentry import (
     APPROACH_SPEED,
     APPROACH_TIMEOUT,
     FALL_CONFIRM,
+    REVERSE_SPEED,
     ReentryController,
 )
 
@@ -280,7 +281,8 @@ class ReentryControllerTest(unittest.TestCase):
             now=0.10 + (IR_ALIGNMENT_CONFIRM - 1) * 0.02, healthy=True,
         )
         self.assertEqual("REVERSE", result["state"])
-        self.assertEqual((-400, -400), (result["left"], result["right"]))
+        self.assertEqual((-REVERSE_SPEED, -REVERSE_SPEED),
+                         (result["left"], result["right"]))
 
     def test_adc_weak_signal_rushes_once_then_stops_on_timeout(self):
         controller = ReentryController()

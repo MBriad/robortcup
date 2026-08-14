@@ -25,12 +25,13 @@ DIGI_IR_PINS = {           # digi_ir.py DIGI_IR_PINS
     "front": 105,
 }
 DIGI_IR_BITS = {           # digi_ir.py DigiIR.bits
-    "left_rear": 2,
-    "left_front": 0,
-    "right_rear": 3,
-    "right_front": 1,
-    "rear": 5,
-    "front": 4,
+    # 新车 2026-08-14 scan 实测：io0=前 io3=左前 io1=左后 io2=右前 io4=右后 io6=后
+    "left_rear": 1,
+    "left_front": 3,
+    "right_rear": 4,
+    "right_front": 2,
+    "rear": 6,
+    "front": 0,
 }
 DIGI_IR_ACTIVE_LEVEL = 0   # digi_ir.py DigiIR.active_level
 GRAY_ADC_MAX = 10000.0     # gray.py
@@ -117,7 +118,7 @@ PATROL_WHITE_ESCAPE_SECONDS = 0.6
 PATROL_RECOVER_SPEED = 550
 # 新车 2026-08-14 实测：400 速度后退 1.5 秒更合理（1.0 仍偏短）。
 PATROL_RECOVER_SECONDS = 1.5
-PATROL_RECOVER_STEP_CM = 21.5  # 旧车 400×0.6s 距离；新车 400×1.5s 待重标（直线标定暂缓）
+PATROL_RECOVER_STEP_CM = 21.5  # 旧车 400×0.6s 距离；新车 550×1.5s 待重标（直线标定暂缓）
 PATROL_RECOVER_MIN_IMPROVEMENT = 0.03
 
 PATROL_WHITE_CONFIRM = 2
