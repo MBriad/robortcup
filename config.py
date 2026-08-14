@@ -5,18 +5,18 @@
 """
 
 # ---------- 传感器接线（gray.py / ir.py / digi_ir.py 通道映射） ----------
-GRAY_CHANNELS = {          # gray.py GraySensor.channels
+GRAY_CHANNELS = {  # gray.py GraySensor.channels
     # 新车接线左右插反（2026-08-14 scan 确认）：left/right 通道对调。
     "front": 2,
     "rear": 3,
     "left": 1,
     "right": 0,
 }
-IR_CHANNELS = {            # ir.py IrSensor.channels
+IR_CHANNELS = {  # ir.py IrSensor.channels
     "left": 5,
     "right": 4,
 }
-DIGI_IR_PINS = {           # digi_ir.py DIGI_IR_PINS
+DIGI_IR_PINS = {  # digi_ir.py DIGI_IR_PINS
     "left_rear": 100,
     "left_front": 101,
     "right_rear": 102,
@@ -24,7 +24,7 @@ DIGI_IR_PINS = {           # digi_ir.py DIGI_IR_PINS
     "rear": 104,
     "front": 105,
 }
-DIGI_IR_BITS = {           # digi_ir.py DigiIR.bits
+DIGI_IR_BITS = {  # digi_ir.py DigiIR.bits
     # 新车 2026-08-14 scan 实测：io0=前 io3=左前 io1=左后 io2=右前 io4=右后 io6=后
     "left_rear": 1,
     "left_front": 3,
@@ -33,33 +33,48 @@ DIGI_IR_BITS = {           # digi_ir.py DigiIR.bits
     "rear": 6,
     "front": 0,
 }
-DIGI_IR_ACTIVE_LEVEL = 0   # digi_ir.py DigiIR.active_level
-GRAY_ADC_MAX = 10000.0     # gray.py
-IR_ADC_MAX = 10000.0       # ir.py
+DIGI_IR_ACTIVE_LEVEL = 0  # digi_ir.py DigiIR.active_level
+GRAY_ADC_MAX = 10000.0  # gray.py
+IR_ADC_MAX = 10000.0  # ir.py
 
 # ---------- 灰度模型（gray.py GrayRiskModel 构造参数；来源：data/gray_model.csv，
 # 新车 2026-08-14 重采重算） ----------
 GRAY_FILTER_WINDOW = 3
 GRAY_EDGE_REFERENCE = {
-    "front": 494.0, "rear": 632.0, "left": 747.0, "right": 675.0,
+    "front": 494.0,
+    "rear": 632.0,
+    "left": 747.0,
+    "right": 675.0,
 }
 GRAY_CENTER_REFERENCE = {
-    "front": 817.0, "rear": 1136.0, "left": 1159.0, "right": 973.0,
+    "front": 817.0,
+    "rear": 1136.0,
+    "left": 1159.0,
+    "right": 973.0,
 }
 GRAY_WHITE_REFERENCE = {
-    "front": 1704.0, "rear": 2144.0, "left": 1920.0, "right": 1858.0,
+    "front": 1704.0,
+    "rear": 2144.0,
+    "left": 1920.0,
+    "right": 1858.0,
 }
 GRAY_WHITE_ENTER = {
-    "front": 1560.0, "rear": 1946.0, "left": 1790.0, "right": 1720.0,
+    "front": 1560.0,
+    "rear": 1946.0,
+    "left": 1790.0,
+    "right": 1720.0,
 }
 GRAY_WHITE_CLEAR = {
-    "front": 1479.0, "rear": 1835.0, "left": 1718.0, "right": 1645.0,
+    "front": 1479.0,
+    "rear": 1835.0,
+    "left": 1718.0,
+    "right": 1645.0,
 }
 # 新车 2026-08-14 调参：内环巡行 zone≈0.5~0.9，0.50 会误触大转，降到 0.35。
 GRAY_NEAR_EDGE_ENTER = 0.35
 GRAY_NEAR_EDGE_CLEAR = 0.65
 
-# ---------- 前头 ADC 对齐（ir.py IrAlignmentModel 构造参数；来源：data/front_adc_model.csv） ----------
+# ---------- 前头 ADC git对齐（ir.py IrAlignmentModel 构造参数；来源：data/front_adc_model.csv） ----------
 IR_ALIGNMENT_FILTER_WINDOW = 9
 IR_ALIGNMENT_DIFF_LOW = 331.0
 IR_ALIGNMENT_DIFF_HIGH = 497.0
@@ -74,9 +89,9 @@ CHASSIS_MOTOR_SWAP = False
 # ---------- 巡台（ring_patrol.py RingPatrolController 参数） ----------
 PATROL_MIN_ACTIVE_SPEED = 400
 PATROL_CRUISE_LINEAR = 450
-PATROL_CRUISE_TURN = 50       # 输出：左 500、右 400，顺时针缓弧
+PATROL_CRUISE_TURN = 50  # 输出：左 500、右 400，顺时针缓弧
 PATROL_MEDIUM_LINEAR = 425
-PATROL_MEDIUM_TURN = 25       # 输出：左 450、右 400
+PATROL_MEDIUM_TURN = 25  # 输出：左 450、右 400
 # 小转调参（2026-08-14 新车两轮实测：50、80 都偏小）：输出左/右 640/400；
 # 增大转向量会更急，但要保持 linear-turn >= 400。
 PATROL_EDGE_AVOID_LINEAR = 520
@@ -118,7 +133,9 @@ PATROL_WHITE_ESCAPE_SECONDS = 0.6
 PATROL_RECOVER_SPEED = 550
 # 新车 2026-08-14 实测：400 速度后退 1.5 秒更合理（1.0 仍偏短）。
 PATROL_RECOVER_SECONDS = 1.5
-PATROL_RECOVER_STEP_CM = 21.5  # 旧车 400×0.6s 距离；新车 550×1.5s 待重标（直线标定暂缓）
+PATROL_RECOVER_STEP_CM = (
+    21.5  # 旧车 400×0.6s 距离；新车 550×1.5s 待重标（直线标定暂缓）
+)
 PATROL_RECOVER_MIN_IMPROVEMENT = 0.03
 
 PATROL_WHITE_CONFIRM = 2
@@ -131,30 +148,35 @@ PATROL_STALE_SECONDS = 0.20
 REENTRY_FALL_CONFIRM = 3
 REENTRY_CORRECT_TURN_SPEED = PATROL_MIN_ACTIVE_SPEED
 REENTRY_CORRECT_TIMEOUT = 3.0
-REENTRY_APPROACH_SPEED = 700               # 大力前冲撞墙速度（一次冲到底，撞上立即停车防堵转）
-REENTRY_APPROACH_TIMEOUT = 2.0             # 大力冲撞兜底时长：超时未贴墙则停车（真机调）
-REENTRY_APPROACH_TOUCH_SIGNAL = 1000.0     # 前头模拟红外 signal≥此值=已贴墙；来源 front_adc_summary.csv（正对着墙 p99≈1315、居中 p99≈710）
-REENTRY_REVERSE_SPEED = PATROL_RECOVER_SPEED   # 掉台矫正完毕倒车速度（与巡台恢复分开调）
+REENTRY_APPROACH_SPEED = 700  # 大力前冲撞墙速度（一次冲到底，撞上立即停车防堵转）
+REENTRY_APPROACH_TIMEOUT = 2.0  # 大力冲撞兜底时长：超时未贴墙则停车（真机调）
+REENTRY_APPROACH_TOUCH_SIGNAL = 1000.0  # 前头模拟红外 signal≥此值=已贴墙；来源 front_adc_summary.csv（正对着墙 p99≈1315、居中 p99≈710）
+REENTRY_REVERSE_SPEED = PATROL_RECOVER_SPEED  # 掉台矫正完毕倒车速度（与巡台恢复分开调）
 REENTRY_REVERSE_TIMEOUT = 3.0
 
 # ---------- 铲子防掉落（shovel_guard.py ShovelGuard 参数） ----------
 # 阈值来源 2026-08-12 固定姿态采集（data/shovel_hang_chunhei.csv / shovel_stage_*.csv，
 # 9 帧中值滤波后）：出台纯黑主区 signal_max≤1354，台内中部≥1442。
-SHOVEL_IR_CHANNELS = {"left": 6, "right": 7}   # 铲子底下 2 路模拟红外；接线用 dev/shovel_tool.py scan 确认
+SHOVEL_IR_CHANNELS = {
+    "left": 6,
+    "right": 7,
+}  # 铲子底下 2 路模拟红外；接线用 dev/shovel_tool.py scan 确认
 SHOVEL_ADC_MAX = IR_ADC_MAX
-SHOVEL_FILTER_WINDOW = 9       # 信号中值滤波窗口（同 ir.py 前头红外对齐模型）
-SHOVEL_HANG_ENTER = 1400.0     # 滤波后 signal_max<此值 = 铲子悬空（出台纯黑 ≤1354，台内 ≥1442）
-SHOVEL_HANG_CLEAR = 1450.0     # 倒车后滤波后 signal_max>此值 = 已收回台内（滞回，> ENTER）
-SHOVEL_HANG_CONFIRM = 3        # 悬空确认帧数（防抖）
-SHOVEL_REVERSE_SPEED = PATROL_MIN_ACTIVE_SPEED   # 倒车收回速度（≥ 电机死区下限）
-SHOVEL_REVERSE_MIN_SECONDS = 0.3   # 最短倒车时长，防信号抖动提前停
-SHOVEL_REVERSE_TIMEOUT = 3.0       # 倒车超时兜底 → 停车待命
+SHOVEL_FILTER_WINDOW = 9  # 信号中值滤波窗口（同 ir.py 前头红外对齐模型）
+SHOVEL_HANG_ENTER = (
+    1400.0  # 滤波后 signal_max<此值 = 铲子悬空（出台纯黑 ≤1354，台内 ≥1442）
+)
+SHOVEL_HANG_CLEAR = 1450.0  # 倒车后滤波后 signal_max>此值 = 已收回台内（滞回，> ENTER）
+SHOVEL_HANG_CONFIRM = 3  # 悬空确认帧数（防抖）
+SHOVEL_REVERSE_SPEED = PATROL_MIN_ACTIVE_SPEED  # 倒车收回速度（≥ 电机死区下限）
+SHOVEL_REVERSE_MIN_SECONDS = 0.3  # 最短倒车时长，防信号抖动提前停
+SHOVEL_REVERSE_TIMEOUT = 3.0  # 倒车超时兜底 → 停车待命
 
 # ---------- YOLO 能量块对准（vision_tracker.py；初值待 dev/vision_tracker.py CSV 标定） ----------
-VISION_LOOP_HZ = 50.0               # 电机安全轮询频率；YOLO 实际约 8 FPS
-VISION_MAX_AGE_MS = 450             # 超过约 3 帧周期仍无新结果，立即停车
-VISION_ERROR_FILTER_ALPHA = 0.45    # 横向归一化误差 EMA，新数据权重
-VISION_DEAD_ZONE = 0.04             # 归一化死区；640 宽画面约为中心左右各 13 px
-VISION_TURN_KP = 600.0              # 归一化横向误差到原地转向速度
-VISION_TURN_MIN_SPEED = 400         # 实测电机可靠动作下限
-VISION_TURN_MAX_SPEED = 600         # 首轮地面测试限速，避免 8 FPS 下转过头
+VISION_LOOP_HZ = 50.0  # 电机安全轮询频率；YOLO 实际约 8 FPS
+VISION_MAX_AGE_MS = 450  # 超过约 3 帧周期仍无新结果，立即停车
+VISION_ERROR_FILTER_ALPHA = 0.45  # 横向归一化误差 EMA，新数据权重
+VISION_DEAD_ZONE = 0.04  # 归一化死区；640 宽画面约为中心左右各 13 px
+VISION_TURN_KP = 600.0  # 归一化横向误差到原地转向速度
+VISION_TURN_MIN_SPEED = 400  # 实测电机可靠动作下限
+VISION_TURN_MAX_SPEED = 600  # 首轮地面测试限速，避免 8 FPS 下转过头
