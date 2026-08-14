@@ -117,8 +117,9 @@ class RingPatrolTest(unittest.TestCase):
             )
 
     def test_sensor_channel_mapping_matches_collection_labels(self):
+        # 新车接线左右插反（2026-08-14 scan 确认），left/right 通道对调。
         self.assertEqual(
-            {"front": 2, "rear": 3, "left": 0, "right": 1},
+            {"front": 2, "rear": 3, "left": 1, "right": 0},
             GRAY_CHANNELS,
         )
 
@@ -134,7 +135,8 @@ class RingPatrolTest(unittest.TestCase):
 
     def white_result(self, *sensors):
         controller = RingPatrolController()
-        sample = dict(GRAY_CENTER_REFERENCE)
+        # 其余路按边缘暗值取值，模拟边界白（zone 低，通过白边门槛）。
+        sample = dict(GRAY_EDGE_REFERENCE)
         for sensor in sensors:
             sample[sensor] = GRAY_WHITE_REFERENCE[sensor]
         result = None
@@ -170,7 +172,7 @@ class RingPatrolTest(unittest.TestCase):
         self.assertLess(result["left"] * result["right"], 0)
 
     def test_big_turn_completes_even_if_white_is_still_visible(self):
-        sample = dict(GRAY_CENTER_REFERENCE)
+        sample = dict(GRAY_EDGE_REFERENCE)
         sample["left"] = GRAY_WHITE_REFERENCE["left"]
         controller = RingPatrolController()
         result = None
@@ -186,9 +188,10 @@ class RingPatrolTest(unittest.TestCase):
         self.assertEqual((400, 400), (result["left"], result["right"]))
 
     def test_side_gray_uses_forward_arc_before_danger(self):
+        # 弧线背离暗侧：左端变暗→右转离开，右端变暗→左转离开。
         cases = (
-            ("left", (400, 500), "left"),
-            ("right", (500, 400), "right"),
+            ("left", (560, 400), "right"),
+            ("right", (400, 560), "left"),
         )
         for sensor, command, direction in cases:
             scores = {name: 0.55 for name in GRAY_CENTER_REFERENCE}
@@ -264,7 +267,7 @@ class RingPatrolTest(unittest.TestCase):
         cases = (
             (1.00, "fast", RingPatrolController._mix(
                 PATROL_CRUISE_LINEAR, PATROL_CRUISE_TURN)),
-            (0.75, "medium", RingPatrolController._mix(
+            (0.88, "medium", RingPatrolController._mix(
                 PATROL_MEDIUM_LINEAR, PATROL_MEDIUM_TURN)),
         )
         for zone_score, level, command in cases:
@@ -283,8 +286,9 @@ class RingPatrolTest(unittest.TestCase):
         for index in range(3):
             result = controller.update(raw_at_zone_components(**scores), now=index * 0.02)
         self.assertEqual("EDGE_AVOID", result["state"])
+        # 左端变暗 → 右转离开（背离暗侧）。
         self.assertEqual(
-            RingPatrolController._mix(PATROL_EDGE_AVOID_LINEAR, -PATROL_EDGE_AVOID_TURN),
+            RingPatrolController._mix(PATROL_EDGE_AVOID_LINEAR, PATROL_EDGE_AVOID_TURN),
             (result["left"], result["right"]),
         )
 
@@ -346,16 +350,16 @@ class RingPatrolTest(unittest.TestCase):
                 self.assertEqual(PATROL_EDGE_TURN_ANGLE, item["turn_angle"])
         self.assertTrue(turns)
 
-    def test_failed_direction_search_latches_safe_stop(self):
+    def test_failed_direction_search_keeps_alternating_recover(self):
         raw = raw_at_zone_components(front=0.20, rear=0.00, left=0.20, right=0.20)
         controller = RingPatrolController()
         result = None
         for index in range(350):
             result = controller.update(raw, now=index * 0.02)
-        self.assertEqual("SAFE_STOP", result["state"])
-        self.assertEqual((0, 0), (result["left"], result["right"]))
+        self.assertIn(result["state"], ("RECOVER_FORWARD", "RECOVER_BACKWARD"))
+        self.assertNotEqual((0, 0), (result["left"], result["right"]))
         result = controller.update(raw, now=7.5)
-        self.assertEqual("SAFE_STOP", result["state"])
+        self.assertIn(result["state"], ("RECOVER_FORWARD", "RECOVER_BACKWARD"))
 
 
 if __name__ == "__main__":

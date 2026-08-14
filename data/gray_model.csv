@@ -1,0 +1,5 @@
+sensor,filter_window,near_edge_enter,near_edge_clear,edge_reference,center_reference,white_reference,safe_upper,white_lower,white_enter,white_clear
+front,3,0.5,0.65,494.0,817.0,1704.0,1426.0,1693.0,1560,1479
+rear,3,0.5,0.65,632.0,1136.0,2144.0,1761.0,2131.231,1946,1835
+left,3,0.5,0.65,747.0,1159.0,1920.0,1669.5829999999987,1910.0,1790,1718
+right,3,0.5,0.65,675.0,973.0,1858.0,1595.0,1844.0,1720,1645

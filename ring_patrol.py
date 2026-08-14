@@ -18,10 +18,12 @@ from config import (
     PATROL_COMMAND_LIMIT,
     PATROL_CRUISE_LINEAR,
     PATROL_CRUISE_TURN,
+    PATROL_EDGE_AVOID_CLEAR,
     PATROL_EDGE_AVOID_LINEAR,
     PATROL_EDGE_AVOID_TURN,
     PATROL_EDGE_ARC_CHECK_SECONDS,
     PATROL_EDGE_TURN_ANGLE,
+    PATROL_EDGE_TURN_ZONE_MAX,
     PATROL_FAST_ZONE_SCORE,
     PATROL_MEDIUM_LINEAR,
     PATROL_MEDIUM_TURN,
@@ -33,6 +35,7 @@ from config import (
     PATROL_WHITE_CONFIRM,
     PATROL_WHITE_ESCAPE_SECONDS,
     PATROL_WHITE_ESCAPE_SPEED,
+    PATROL_WHITE_ZONE_MAX,
 )
 from gray import GrayRiskModel
 
@@ -105,7 +108,8 @@ class RingPatrolController:
             command = (PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED)
         else:
             if not continuing:
-                self._avoid_turn_sign = -1.0 if turn_signal < 0.0 else 1.0
+                # 背离暗侧转向：右端变暗(turn_signal>0)应左转离开，2026-08-14 翻正。
+                self._avoid_turn_sign = -1.0 if turn_signal > 0.0 else 1.0
             turn = self._avoid_turn_sign * PATROL_EDGE_AVOID_TURN
             command = self._mix(PATROL_EDGE_AVOID_LINEAR, turn)
         if not continuing:
@@ -154,6 +158,10 @@ class RingPatrolController:
     def _start_cruise_for_zone(self, observation, now, reason):
         if observation["zone_score"] < PATROL_SMALL_TURN_ZONE_SCORE:
             self._start_edge_avoid(observation, now, "灰度趋势变暗，提前避让")
+        elif (self.state == "EDGE_AVOID" and
+                observation["zone_score"] < PATROL_EDGE_AVOID_CLEAR):
+            # 滞回：避让中未恢复到 CLEAR 前不退出，防进入阈值边界来回振荡。
+            self._start_edge_avoid(observation, now, "避让滞回，未恢复不退出")
         elif observation["zone_score"] < PATROL_FAST_ZONE_SCORE:
             self.risk_sensor = ""
             self._enter("MEDIUM_CRUISE", now,
@@ -183,7 +191,12 @@ class RingPatrolController:
             self._enter("WARMUP", now, (0, 0), "等待滤波窗口")
             return self._result(observation)
 
-        self._white_count = self._white_count + 1 if observation["white_hits"] else 0
+        # 白边判定加 zone 门槛：场中武字白 zone 高，不当白边处理。
+        white_edge = (
+            observation["white_hits"]
+            and observation["zone_score"] < PATROL_WHITE_ZONE_MAX
+        )
+        self._white_count = self._white_count + 1 if white_edge else 0
         self._near_count = self._near_count + 1 if observation["near_edge"] else 0
 
         if self.state == "SAFE_STOP":
@@ -234,12 +247,12 @@ class RingPatrolController:
                         "方向有效，继续低速脱离",
                     )
                 else:
-                        self._enter(
-                            "SAFE_STOP",
-                            now,
-                            (0, 0),
-                            "大转后直线脱离仍未改善，停车等待",
-                        )
+                    self._start_recover(
+                        observation,
+                        now,
+                        self.state == "RECOVER_BACKWARD",
+                        "直线脱离未改善，换方向继续",
+                    )
             return self._result(observation)
 
         avoid_check_seconds = (
@@ -249,9 +262,10 @@ class RingPatrolController:
         )
         if self.state == "EDGE_AVOID" and elapsed >= avoid_check_seconds:
             improvement = observation["zone_score"] - self._avoid_start_zone
-            if improvement < PATROL_RECOVER_MIN_IMPROVEMENT:
+            if (improvement < PATROL_RECOVER_MIN_IMPROVEMENT and
+                    observation["zone_score"] < PATROL_EDGE_TURN_ZONE_MAX):
                 self._start_edge_turn(
-                    observation, now, "小转未改善，直接大转 180 度"
+                    observation, now, "小转未改善且已逼近边缘，直接大转 180 度"
                 )
                 return self._result(observation)
             self._avoid_start_zone = observation["zone_score"]

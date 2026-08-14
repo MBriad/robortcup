@@ -6,10 +6,11 @@
 
 # ---------- 传感器接线（gray.py / ir.py / digi_ir.py 通道映射） ----------
 GRAY_CHANNELS = {          # gray.py GraySensor.channels
+    # 新车接线左右插反（2026-08-14 scan 确认）：left/right 通道对调。
     "front": 2,
     "rear": 3,
-    "left": 0,
-    "right": 1,
+    "left": 1,
+    "right": 0,
 }
 IR_CHANNELS = {            # ir.py IrSensor.channels
     "left": 5,
@@ -35,24 +36,26 @@ DIGI_IR_ACTIVE_LEVEL = 0   # digi_ir.py DigiIR.active_level
 GRAY_ADC_MAX = 10000.0     # gray.py
 IR_ADC_MAX = 10000.0       # ir.py
 
-# ---------- 灰度模型（gray.py GrayRiskModel 构造参数；来源：data/gray_model.csv） ----------
+# ---------- 灰度模型（gray.py GrayRiskModel 构造参数；来源：data/gray_model.csv，
+# 新车 2026-08-14 重采重算） ----------
 GRAY_FILTER_WINDOW = 3
 GRAY_EDGE_REFERENCE = {
-    "front": 666.0, "rear": 798.0, "left": 458.0, "right": 1143.0,
+    "front": 494.0, "rear": 632.0, "left": 747.0, "right": 675.0,
 }
 GRAY_CENTER_REFERENCE = {
-    "front": 1033.5, "rear": 1257.0, "left": 817.0, "right": 1622.0,
+    "front": 817.0, "rear": 1136.0, "left": 1159.0, "right": 973.0,
 }
 GRAY_WHITE_REFERENCE = {
-    "front": 1924.0, "rear": 2283.0, "left": 1625.0, "right": 2507.0,
+    "front": 1704.0, "rear": 2144.0, "left": 1920.0, "right": 1858.0,
 }
 GRAY_WHITE_ENTER = {
-    "front": 1798.0, "rear": 2154.0, "left": 1508.0, "right": 2395.0,
+    "front": 1560.0, "rear": 1946.0, "left": 1790.0, "right": 1720.0,
 }
 GRAY_WHITE_CLEAR = {
-    "front": 1731.0, "rear": 2085.0, "left": 1445.0, "right": 2337.0,
+    "front": 1479.0, "rear": 1835.0, "left": 1718.0, "right": 1645.0,
 }
-GRAY_NEAR_EDGE_ENTER = 0.50
+# 新车 2026-08-14 调参：内环巡行 zone≈0.5~0.9，0.50 会误触大转，降到 0.35。
+GRAY_NEAR_EDGE_ENTER = 0.35
 GRAY_NEAR_EDGE_CLEAR = 0.65
 
 # ---------- 前头 ADC 对齐（ir.py IrAlignmentModel 构造参数；来源：data/front_adc_model.csv） ----------
@@ -73,14 +76,20 @@ PATROL_CRUISE_LINEAR = 450
 PATROL_CRUISE_TURN = 50       # 输出：左 500、右 400，顺时针缓弧
 PATROL_MEDIUM_LINEAR = 425
 PATROL_MEDIUM_TURN = 25       # 输出：左 450、右 400
-# 小转调参：当前输出左/右 400/500；增大转向量会更急，但要保持 linear-turn >= 400。
-PATROL_EDGE_AVOID_LINEAR = 450
-PATROL_EDGE_AVOID_TURN = 50
-PATROL_EDGE_ARC_CHECK_SECONDS = 0.20
+# 小转调参（2026-08-14 新车加大转向量）：输出左/右 560/400；
+# 增大转向量会更急，但要保持 linear-turn >= 400。
+PATROL_EDGE_AVOID_LINEAR = 480
+PATROL_EDGE_AVOID_TURN = 80
+PATROL_EDGE_ARC_CHECK_SECONDS = 0.50
 PATROL_EDGE_TURN_ANGLE = 180.0
 PATROL_FAST_ZONE_SCORE = 0.90
 # 小转阈值：提高会更早小转，降低会更晚小转；必须高于大转阈值。
-PATROL_SMALL_TURN_ZONE_SCORE = 0.75
+# 新车 2026-08-14：更内环 zone≈0.83~1.7，0.75 进入浅灰区才小转太晚，提到 0.85。
+PATROL_SMALL_TURN_ZONE_SCORE = 0.85
+# 避让退出滞回：zone 恢复到该值以上才退出 EDGE_AVOID，防 0.85 边界来回振荡。
+PATROL_EDGE_AVOID_CLEAR = 0.95
+# 小转无改善时，只有 zone 低于此值才升级 180° 大转；更内环小转不改善只继续弧线。
+PATROL_EDGE_TURN_ZONE_MAX = 0.60
 PATROL_COMMAND_LIMIT = 1023
 
 # 转向速度/时长标定（ring_patrol.py EDGE_TURN 与 reentry.py TURN_* 共用；
@@ -106,11 +115,14 @@ MOTOR_TURN_CALIBRATION = {
 PATROL_WHITE_ESCAPE_SPEED = 400
 PATROL_WHITE_ESCAPE_SECONDS = 0.6
 PATROL_RECOVER_SPEED = 400
-PATROL_RECOVER_SECONDS = 0.6
-PATROL_RECOVER_STEP_CM = 21.5  # 400 速度运行 0.6 秒的前进/后退实测距离
+# 新车 2026-08-14 实测：后退 400 速度跑 1 秒效果更好。
+PATROL_RECOVER_SECONDS = 1.0
+PATROL_RECOVER_STEP_CM = 21.5  # 旧车 400×0.6s 距离；新车 400×1.0s 待重标（直线标定暂缓）
 PATROL_RECOVER_MIN_IMPROVEMENT = 0.03
 
 PATROL_WHITE_CONFIRM = 2
+# 白边判定 zone 门槛：武字白实测 zone>=0.7，边界白 <0.3，取 0.5 区分。
+PATROL_WHITE_ZONE_MAX = 0.5
 PATROL_NEAR_CONFIRM = 3
 PATROL_STALE_SECONDS = 0.20
 
