@@ -1,3 +1,0 @@
-direction,speed,duration,distance_cm,result
-forward,400,0.6,21.5,distance_measured
-backward,400,0.6,21.5,distance_measured
