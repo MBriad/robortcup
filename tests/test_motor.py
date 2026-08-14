@@ -49,7 +49,7 @@ class MotorDirectionTest(unittest.TestCase):
         self.assertEqual({"forward", "backward"}, {row["direction"] for row in rows})
         for row in rows:
             self.assertEqual(400, int(row["speed"]))
-            self.assertEqual(1.0, float(row["duration"]))
+            self.assertEqual(1.5, float(row["duration"]))
             self.assertEqual(PATROL_RECOVER_STEP_CM, float(row["distance_cm"]))
             self.assertEqual("distance_measured", row["result"])
 

@@ -190,8 +190,8 @@ class RingPatrolTest(unittest.TestCase):
     def test_side_gray_uses_forward_arc_before_danger(self):
         # 弧线背离暗侧：左端变暗→右转离开，右端变暗→左转离开。
         cases = (
-            ("left", (560, 400), "right"),
-            ("right", (400, 560), "left"),
+            ("left", (640, 400), "right"),
+            ("right", (400, 640), "left"),
         )
         for sensor, command, direction in cases:
             scores = {name: 0.55 for name in GRAY_CENTER_REFERENCE}
