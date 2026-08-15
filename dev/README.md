@@ -114,7 +114,7 @@ python3 dev/ir_tool.py scan --mapped       # 映射后的 left/right/diff/valid
 python3 dev/ir_tool.py collect             # 输出 data/front_adc_时间.csv
 ```
 
-- 通道映射来自 config `IR_CHANNELS`（left=adc5, right=adc4）。
+- 通道映射来自 config `IR_CHANNELS`（left=adc7, right=adc6，新车 2026-08-15 scan 实测）。
 - CSV 字段：`t, left, right, diff, valid`。
 
 ### 3.3 dev/digi_ir_tool.py —— 六路数字红外
@@ -180,7 +180,10 @@ python3 dev/calibrate_shovel.py
 ```
 
 - 按文件名关键词把 `data/` 下采集 CSV 分成悬空组（hang）与台内组（stage），
-  计算 ENTER = 悬空 max p99 与台内 min p01 的中点，CLEAR 再取中点形成滞回。
+  先按 `SHOVEL_FILTER_WINDOW` 对每帧 max/min(两路) 做滚动中值滤波（与 guard 判据一致）。
+- 新车极性（2026-08-15 起）：悬空=信号高、台内=信号低。
+  ENTER = 台内 min p99 与悬空 min p01 的中点（min(两路) 高于它判悬空）；
+  CLEAR = 台内 max p99 与悬空 max p01 的中点（max(两路) 低于它判收回，CLEAR>ENTER 滞回）。
 - 两组区间重叠会报错并提示重采（悬空要真正伸出、台内要正常贴台面）。
 - 输出 `data/shovel_model.csv` 并打印建议值，核对后写回 config.py 的
   `SHOVEL_HANG_ENTER / SHOVEL_HANG_CLEAR`。

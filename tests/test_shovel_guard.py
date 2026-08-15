@@ -18,8 +18,8 @@ from config import (
 from shovel_guard import ShovelGuard
 
 
-HANGING = {"left": 20.0, "right": 20.0, "valid": True}    # 悬空：远低于 ENTER=1400
-ON_STAGE = {"left": 1600.0, "right": 1600.0, "valid": True}  # 台内：高于 CLEAR=1450
+HANGING = {"left": 1600.0, "right": 1600.0, "valid": True}  # 悬空：两路高于 ENTER=670
+ON_STAGE = {"left": 20.0, "right": 20.0, "valid": True}  # 台内：两路低于 CLEAR=1360
 
 
 class ShovelGuardTest(unittest.TestCase):
@@ -106,7 +106,7 @@ class ShovelGuardTest(unittest.TestCase):
             self.assertEqual("IDLE", result["state"])
 
     def test_median_filter_suppresses_single_spike(self):
-        # 3 帧中值滤波：悬空中出现一帧台内尖峰，中位数仍低 → 触发
+        # 3 帧中值滤波：悬空中出现一帧台内尖峰，中位数仍高 → 触发
         guard = ShovelGuard(window=3)
         result = None
         for index, raw in enumerate((HANGING, HANGING, ON_STAGE)):
@@ -114,7 +114,7 @@ class ShovelGuardTest(unittest.TestCase):
         self.assertEqual("HANGED", result["state"])
         self.assertTrue(result["hang"])
 
-        # 反向：台内中出现一帧悬空尖峰，中位数仍高 → 不触发
+        # 反向：台内中出现一帧悬空尖峰，中位数仍低 → 不触发
         guard = ShovelGuard(window=3)
         result = None
         for index, raw in enumerate((ON_STAGE, ON_STAGE, HANGING)):

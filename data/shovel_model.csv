@@ -1,0 +1,3 @@
+parameter,value,source,note
+hang_enter,668.5,台内 min p99=46 / 悬空 min p01=1291,滤波后 min(两路) 高于此值 = 铲子悬空（shovel_guard SHOVEL_HANG_ENTER）
+hang_clear,1358.8,台内 max p99=1265 / 悬空 max p01=1453,倒车后滤波后 max(两路) 低于此值 = 已收回台内（shovel_guard SHOVEL_HANG_CLEAR）

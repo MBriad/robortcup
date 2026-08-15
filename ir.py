@@ -8,9 +8,10 @@ from collections import deque
 
 # ---------- 独立默认值；生产/dev 运行时由 config.py 注入 ----------
 # 通道映射按真机接线确认（换车时用 `scan` 看全 10 路再改这里）。
+# 新车 2026-08-15 scan 实测：前方红外左=7、右=6。
 IR_CHANNELS = {
-    "left": 5,     # 前左红外
-    "right": 4,    # 前右红外
+    "left": 7,     # 前左红外
+    "right": 6,    # 前右红外
 }
 ADC_MAX = 10000.0      # ADC 合法上限：超限=坏值→0 + valid=False（fail-safe）
 # 来源：data/front_adc_model.csv，2026-08-11 三组固定姿态数据。

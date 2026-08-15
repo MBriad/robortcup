@@ -8,11 +8,11 @@
     healthy    : 驱动层健康标志
 输出：电机命令 / 状态。上层以 state != "IDLE" 判定接管电机。
 
-流程：
+流程（新车 2026-08-15 实测极性：铲子悬空=信号高，台内=信号低）：
     IDLE（active=False 或铲子在台内）
-      → 两路信号均 < SHOVEL_HANG_ENTER → HANGED（第一帧即停车，防掉落优先）
+      → 两路信号均 > SHOVEL_HANG_ENTER → HANGED（第一帧即停车，防掉落优先）
       → HANGED：连续 SHOVEL_HANG_CONFIRM 帧仍悬空 → REVERSE；信号恢复 → 回 IDLE
-      → REVERSE：倒车收回；两路均 > SHOVEL_HANG_CLEAR 且已倒 ≥ SHOVEL_REVERSE_MIN_SECONDS → IDLE；
+      → REVERSE：倒车收回；两路均 < SHOVEL_HANG_CLEAR 且已倒 ≥ SHOVEL_REVERSE_MIN_SECONDS → IDLE；
         超时 SHOVEL_REVERSE_TIMEOUT → SAFE_STOP（信号恢复后回 IDLE）
 """
 
@@ -46,7 +46,7 @@ class ShovelGuard:
         self.state = "IDLE"
         self.reason = "待机"
         self.command = (0, 0)
-        self.hang = False          # 铲子悬空电平（滤波后两路最大信号低于进入阈值）
+        self.hang = False          # 铲子悬空电平（滤波后两路最小信号高于进入阈值）
         self._hang_count = 0
         self._state_started = 0.0
 
@@ -78,7 +78,7 @@ class ShovelGuard:
             return self._result()
         filtered_max = statistics.median(self._max_samples)
         filtered_min = statistics.median(self._min_samples)
-        self.hang = filtered_max < SHOVEL_HANG_ENTER
+        self.hang = filtered_min > SHOVEL_HANG_ENTER
         elapsed = now - self._state_started
 
         if self.state == "IDLE":
@@ -100,14 +100,14 @@ class ShovelGuard:
             return self._result()
 
         if self.state == "REVERSE":
-            if filtered_min > SHOVEL_HANG_CLEAR and elapsed >= SHOVEL_REVERSE_MIN_SECONDS:
+            if filtered_max < SHOVEL_HANG_CLEAR and elapsed >= SHOVEL_REVERSE_MIN_SECONDS:
                 self._enter("IDLE", now, (0, 0), "铲子已收回台内")
             elif elapsed >= SHOVEL_REVERSE_TIMEOUT:
                 self._enter("SAFE_STOP", now, (0, 0), "倒车超时未收回，停车待命")
             return self._result()
 
         if self.state == "SAFE_STOP":
-            if filtered_min > SHOVEL_HANG_CLEAR:
+            if filtered_max < SHOVEL_HANG_CLEAR:
                 self._enter("IDLE", now, (0, 0), "信号恢复，解除保护停车")
             return self._result()
 

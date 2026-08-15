@@ -13,8 +13,9 @@ GRAY_CHANNELS = {  # gray.py GraySensor.channels
     "right": 0,
 }
 IR_CHANNELS = {  # ir.py IrSensor.channels
-    "left": 5,
-    "right": 4,
+    # 新车 2026-08-15 scan 实测：前方红外左=7、右=6。
+    "left": 7,
+    "right": 6,
 }
 DIGI_IR_PINS = {  # digi_ir.py DIGI_IR_PINS
     "left_rear": 100,
@@ -155,18 +156,19 @@ REENTRY_REVERSE_SPEED = PATROL_RECOVER_SPEED  # 掉台矫正完毕倒车速度�
 REENTRY_REVERSE_TIMEOUT = 3.0
 
 # ---------- 铲子防掉落（shovel_guard.py ShovelGuard 参数） ----------
-# 阈值来源 2026-08-12 固定姿态采集（data/shovel_hang_chunhei.csv / shovel_stage_*.csv，
-# 9 帧中值滤波后）：出台纯黑主区 signal_max≤1354，台内中部≥1442。
+# 阈值来源 2026-08-15 新车采集（data/shovel_hang_OutOfStage.csv / shovel_stage_OnStage.csv，
+# 9 帧中值滤波后）：悬空 min(两路) p01=1291、台内 min(两路) p99=46 → ENTER 取中点 670；
+# 悬空 max(两路) p01=1452、台内 max(两路) p99=1265 → CLEAR 取中点 1360。
+# 新车极性与旧车相反：悬空=信号高、台内=信号低（判据：两路均 >ENTER 触发、均 <CLEAR 收回）。
 SHOVEL_IR_CHANNELS = {
-    "left": 6,
-    "right": 7,
+    # 新车 2026-08-15 scan 实测：铲子底下红外左=4、右=5。
+    "left": 4,
+    "right": 5,
 }  # 铲子底下 2 路模拟红外；接线用 dev/shovel_tool.py scan 确认
 SHOVEL_ADC_MAX = IR_ADC_MAX
 SHOVEL_FILTER_WINDOW = 9  # 信号中值滤波窗口（同 ir.py 前头红外对齐模型）
-SHOVEL_HANG_ENTER = (
-    1400.0  # 滤波后 signal_max<此值 = 铲子悬空（出台纯黑 ≤1354，台内 ≥1442）
-)
-SHOVEL_HANG_CLEAR = 1450.0  # 倒车后滤波后 signal_max>此值 = 已收回台内（滞回，> ENTER）
+SHOVEL_HANG_ENTER = 670.0  # 滤波后 min(两路)>此值 = 铲子悬空
+SHOVEL_HANG_CLEAR = 1360.0  # 倒车后滤波后 max(两路)<此值 = 已收回台内（滞回，CLEAR>ENTER）
 SHOVEL_HANG_CONFIRM = 3  # 悬空确认帧数（防抖）
 SHOVEL_REVERSE_SPEED = PATROL_MIN_ACTIVE_SPEED  # 倒车收回速度（≥ 电机死区下限）
 SHOVEL_REVERSE_MIN_SECONDS = 0.3  # 最短倒车时长，防信号抖动提前停

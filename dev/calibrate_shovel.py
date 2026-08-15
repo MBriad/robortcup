@@ -9,9 +9,12 @@
         含「台内/台上」或 stage → 台内组（铲子在台内正常位，信号高）
     其余文件忽略（自定义分组数据不会被计入）。
 
-阈值逻辑：
-    ENTER = 悬空组 signal_max p99 与 台内组 signal_min p01 的中点（低于它判悬空）
-    CLEAR = ENTER 与 台内组 signal_min p01 的中点（高于它判已收回，> ENTER 形成滞回）
+阈值逻辑（新车 2026-08-15 起极性：铲子悬空=信号高、台内=信号低）：
+    先按 SHOVEL_FILTER_WINDOW 对每帧的 max/min(两路) 序列做滚动中值滤波（与 guard 判据一致），
+    再用滤波后分位定阈值：
+    ENTER = 台内组 signal_min p99 与 悬空组 signal_min p01 的中点（min(两路) 高于它判悬空）
+    CLEAR = 台内组 signal_max p99 与 悬空组 signal_max p01 的中点（max(两路) 低于它判收回；
+            CLEAR > ENTER 形成滞回）
 
 真机流程：
     python3 dev/shovel_tool.py collect   # 采「悬空」：铲子伸出台面，5~10 秒
@@ -22,8 +25,16 @@
 import argparse
 import csv
 import os
+import statistics
+import sys
+from collections import deque
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT in sys.path:
+    sys.path.remove(ROOT)
+sys.path.insert(0, ROOT)
+
+from config import SHOVEL_FILTER_WINDOW  # noqa: E402
 
 
 def _percentile(values, fraction):
@@ -60,11 +71,24 @@ def _read_rows(path):
     return rows
 
 
+def _median_series(values, window):
+    """对序列做 window 帧滚动中值滤波（丢弃不满窗口的头部，与 guard 一致）。"""
+    samples = deque(maxlen=window)
+    filtered = []
+    for value in values:
+        samples.append(value)
+        if len(samples) == window:
+            filtered.append(statistics.median(samples))
+    return filtered
+
+
 def analyze(data_dir):
-    """逐文件摘要 + 分组汇总，返回 (摘要行, hang_max, stage_min)。"""
+    """逐文件滤波后摘要 + 分组汇总，返回 (摘要行, hang_min, stage_min, hang_max, stage_max)。"""
     summary = []
-    hang_max = []
+    hang_min = []
     stage_min = []
+    hang_max = []
+    stage_max = []
     for filename in sorted(os.listdir(data_dir)):
         if not filename.lower().endswith(".csv"):
             continue
@@ -74,8 +98,12 @@ def analyze(data_dir):
         rows = _read_rows(os.path.join(data_dir, filename))
         if not rows:
             continue
-        maxima = [signal_max for signal_max, _ in rows]
-        minima = [signal_min for _, signal_min in rows]
+        maxima = _median_series(
+            [signal_max for signal_max, _ in rows], SHOVEL_FILTER_WINDOW)
+        minima = _median_series(
+            [signal_min for _, signal_min in rows], SHOVEL_FILTER_WINDOW)
+        if not maxima:
+            continue
         summary.append({
             "source": filename,
             "role": role,
@@ -87,46 +115,42 @@ def analyze(data_dir):
         })
         if role == "hang":
             hang_max.extend(maxima)
+            hang_min.extend(minima)
         else:
+            stage_max.extend(maxima)
             stage_min.extend(minima)
-    return summary, hang_max, stage_min
+    return summary, hang_min, stage_min, hang_max, stage_max
 
 
-def derive_model(hang_max, stage_min, model_path):
-    """由悬空 max 与台内 min 分布定 ENTER/CLEAR，要求区间不重叠。"""
-    hang_p99 = _percentile(hang_max, 0.99)
-    stage_p01 = _percentile(stage_min, 0.01)
-    if stage_p01 <= hang_p99:
+def derive_model(hang_min, stage_min, hang_max, stage_max, model_path):
+    """由悬空/台内的 min、max 滤波分布定 ENTER/CLEAR，要求两态区间不重叠。"""
+    stage_min_p99 = _percentile(stage_min, 0.99)
+    hang_min_p01 = _percentile(hang_min, 0.01)
+    stage_max_p99 = _percentile(stage_max, 0.99)
+    hang_max_p01 = _percentile(hang_max, 0.01)
+    if stage_min_p99 >= hang_min_p01 or stage_max_p99 >= hang_max_p01:
         raise RuntimeError(
-            "悬空与台内信号区间重叠：悬空 signal_max p99=%.0f，台内 signal_min p01=%.0f；"
-            "请重采（悬空要真正伸出，台内要正常贴台面）" % (hang_p99, stage_p01)
+            "悬空与台内信号区间重叠：台内 min p99=%.0f vs 悬空 min p01=%.0f，"
+            "台内 max p99=%.0f vs 悬空 max p01=%.0f；"
+            "请重采（悬空要真正伸出，台内要正常贴台面）" % (
+                stage_min_p99, hang_min_p01, stage_max_p99, hang_max_p01)
         )
-    enter = (hang_p99 + stage_p01) / 2.0
-    clear = (enter + stage_p01) / 2.0
+    enter = (stage_min_p99 + hang_min_p01) / 2.0
+    clear = (stage_max_p99 + hang_max_p01) / 2.0
     model = [
         {
             "parameter": "hang_enter",
             "value": round(enter, 1),
-            "source": "悬空 max p99=%.0f / 台内 min p01=%.0f" % (hang_p99, stage_p01),
-            "note": "两路 signal 均低于此值 = 铲子悬空（shovel_guard SHOVEL_HANG_ENTER）",
+            "source": "台内 min p99=%.0f / 悬空 min p01=%.0f" % (
+                stage_min_p99, hang_min_p01),
+            "note": "滤波后 min(两路) 高于此值 = 铲子悬空（shovel_guard SHOVEL_HANG_ENTER）",
         },
         {
             "parameter": "hang_clear",
             "value": round(clear, 1),
-            "source": "hang_enter 与 台内 min p01 中点",
-            "note": "倒车后两路 signal 均高于此值 = 已收回台内（shovel_guard SHOVEL_HANG_CLEAR）",
-        },
-        {
-            "parameter": "hang_max_p99",
-            "value": round(hang_p99, 1),
-            "source": "悬空组汇总",
-            "note": "悬空时两路最大信号的分位上限",
-        },
-        {
-            "parameter": "stage_min_p01",
-            "value": round(stage_p01, 1),
-            "source": "台内组汇总",
-            "note": "台内时两路最小信号的分位下限",
+            "source": "台内 max p99=%.0f / 悬空 max p01=%.0f" % (
+                stage_max_p99, hang_max_p01),
+            "note": "倒车后滤波后 max(两路) 低于此值 = 已收回台内（shovel_guard SHOVEL_HANG_CLEAR）",
         },
     ]
     os.makedirs(os.path.dirname(os.path.abspath(model_path)), exist_ok=True)
@@ -145,12 +169,12 @@ def main():
     parser.add_argument("--out", default=os.path.join(data_dir, "shovel_model.csv"))
     args = parser.parse_args()
 
-    summary, hang_max, stage_min = analyze(args.data_dir)
-    if not hang_max or not stage_min:
+    summary, hang_min, stage_min, hang_max, stage_max = analyze(args.data_dir)
+    if not hang_min or not stage_min:
         raise SystemExit(
             "缺少分组数据：需要文件名含关键词的采集 CSV\n"
             "  hang / 悬空 / 出台 → 悬空组；stage / 台内 / 台上 → 台内组")
-    model = derive_model(hang_max, stage_min, args.out)
+    model = derive_model(hang_min, stage_min, hang_max, stage_max, args.out)
     ignored = [
         name for name in sorted(os.listdir(args.data_dir))
         if name.lower().endswith(".csv") and _classify(name) is None
