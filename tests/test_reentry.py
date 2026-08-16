@@ -60,9 +60,10 @@ def ir_states(**active):
 
 
 ANALOG_CENTERED = {"left": 500.0, "right": 500.0, "valid": True}
-ANALOG_LEFT_BIAS = {"left": 550.0, "right": 305.0, "valid": True}
-ANALOG_ALIGNED = {"left": 661.0, "right": 273.0, "valid": True}
-ANALOG_RIGHT_BIAS = {"left": 610.0, "right": 20.0, "valid": True}
+# diff 取值按新车 2026-08-15 标定区间：左偏≈-146 / 正对≈8 / 右偏≈108，signal>296。
+ANALOG_LEFT_BIAS = {"left": 560.0, "right": 706.0, "valid": True}
+ANALOG_ALIGNED = {"left": 612.0, "right": 604.0, "valid": True}
+ANALOG_RIGHT_BIAS = {"left": 716.0, "right": 608.0, "valid": True}
 ANALOG_WEAK = {"left": 184.0, "right": 20.0, "valid": True}
 
 

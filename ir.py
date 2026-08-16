@@ -14,12 +14,12 @@ IR_CHANNELS = {
     "right": 6,    # 前右红外
 }
 ADC_MAX = 10000.0      # ADC 合法上限：超限=坏值→0 + valid=False（fail-safe）
-# 来源：data/front_adc_model.csv，2026-08-11 三组固定姿态数据。
+# 来源：data/front_adc_model.csv，新车 2026-08-15 四组固定姿态重采重算（通道 7/6）。
 IR_ALIGNMENT_FILTER_WINDOW = 9
-IR_ALIGNMENT_DIFF_LOW = 331.0
-IR_ALIGNMENT_DIFF_HIGH = 497.0
+IR_ALIGNMENT_DIFF_LOW = -75.1
+IR_ALIGNMENT_DIFF_HIGH = 63.5
 IR_ALIGNMENT_CONFIRM = 3
-IR_ALIGNMENT_SIGNAL_MIN = 377.0
+IR_ALIGNMENT_SIGNAL_MIN = 296.0
 
 
 class IrSensor:

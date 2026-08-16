@@ -7,7 +7,8 @@
       "Read(//c/Users/MBri/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/productivity/grilling/**)",
       "Bash(python3 -m py_compile gray.py)",
       "PowerShell(python _smoke_ir.py)",
-      "PowerShell(python _smoke_collect.py)"
+      "PowerShell(python _smoke_collect.py)",
+      "Bash(LC_ALL=C.UTF-8 python3 -c ' *)"
     ]
   }
 }

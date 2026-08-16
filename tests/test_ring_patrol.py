@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import csv
+import glob
 import os
 import sys
 import unittest
@@ -11,306 +12,309 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from config import (
-    GRAY_ADC_MAX,
     GRAY_CENTER_REFERENCE,
     GRAY_CHANNELS,
     GRAY_EDGE_REFERENCE,
-    GRAY_FILTER_WINDOW,
-    GRAY_NEAR_EDGE_CLEAR,
-    GRAY_NEAR_EDGE_ENTER,
-    GRAY_WHITE_CLEAR,
-    GRAY_WHITE_ENTER,
     GRAY_WHITE_REFERENCE,
     MOTOR_TURN_CALIBRATION,
+    PATROL_COMMAND_LIMIT,
     PATROL_CRUISE_LINEAR,
-    PATROL_CRUISE_TURN,
-    PATROL_EDGE_AVOID_LINEAR,
-    PATROL_EDGE_AVOID_TURN,
+    PATROL_DIAGONAL_CONFIRM,
+    PATROL_DIAGONAL_SIDE_ZONE,
+    PATROL_DIAGONAL_TURN_DELTA,
+    PATROL_EDGE_RETREAT_SECONDS,
     PATROL_EDGE_TURN_ANGLE,
     PATROL_MEDIUM_LINEAR,
-    PATROL_MEDIUM_TURN,
     PATROL_MIN_ACTIVE_SPEED,
+    PATROL_RECOVER_SECONDS,
     PATROL_RECOVER_SPEED,
+    PATROL_SHOVEL_PREHEAT_FRONT_ZONE,
 )
 from gray import GrayRiskModel
 from ring_patrol import RingPatrolController
 
 
 DATA_DIR = os.path.join(ROOT, "data")
-
-
-def configured_gray_model():
-    return GrayRiskModel(
-        window=GRAY_FILTER_WINDOW,
-        edge_reference=GRAY_EDGE_REFERENCE,
-        center_reference=GRAY_CENTER_REFERENCE,
-        white_reference=GRAY_WHITE_REFERENCE,
-        white_enter=GRAY_WHITE_ENTER,
-        white_clear=GRAY_WHITE_CLEAR,
-        near_edge_enter=GRAY_NEAR_EDGE_ENTER,
-        near_edge_clear=GRAY_NEAR_EDGE_CLEAR,
-        adc_max=GRAY_ADC_MAX,
-    )
-
-
-def replay(filename):
-    controller = RingPatrolController()
-    states = []
-    with open(os.path.join(DATA_DIR, filename), newline="", encoding="utf-8-sig") as handle:
-        for row in csv.DictReader(handle):
-            raw = {name: float(row[name]) for name in ("front", "rear", "left", "right")}
-            states.append(controller.update(raw, now=float(row["t"])))
-    return states
+DIAGONAL_WHITE_EDGE_LOG = "patrol_20260816_091726.csv"
+MANUAL_DIAGONAL_TRIAL_LOG = "patrol_20260816_093316.csv"
+SHOVEL_FRONT_EDGE_LOG = "边缘容易掉台.csv"
+SHOVEL_PREHEAT_EDGE_LOG = "边缘希望激活铲子.csv"
 
 
 def raw_at_zone(score):
     return {
-        name: (GRAY_EDGE_REFERENCE[name] +
-               score * (GRAY_CENTER_REFERENCE[name] - GRAY_EDGE_REFERENCE[name]))
+        name: (
+            GRAY_EDGE_REFERENCE[name]
+            + score * (GRAY_CENTER_REFERENCE[name] - GRAY_EDGE_REFERENCE[name])
+        )
         for name in GRAY_CENTER_REFERENCE
     }
 
 
 def raw_at_zone_components(**scores):
     return {
-        name: (GRAY_EDGE_REFERENCE[name] +
-               scores[name] * (GRAY_CENTER_REFERENCE[name] - GRAY_EDGE_REFERENCE[name]))
+        name: (
+            GRAY_EDGE_REFERENCE[name]
+            + scores[name]
+            * (GRAY_CENTER_REFERENCE[name] - GRAY_EDGE_REFERENCE[name])
+        )
         for name in GRAY_CENTER_REFERENCE
     }
 
 
-class RingPatrolTest(unittest.TestCase):
-    def test_center_data_never_triggers_white_edge_escape(self):
-        files = ("武字中间旋转2圈.csv", "武字中间逆时针旋转2圈.csv",
-                 "武字数据.csv", "武字数据逆时针.csv")
-        for filename in files:
-            states = replay(filename)
-            unsafe = {item["state"] for item in states} & {"WHITE_ESCAPE"}
-            self.assertEqual(set(), unsafe, filename)
-
-    def test_edge_data_enters_moving_avoidance_without_white_escape(self):
-        states = replay("边缘.csv")
-        names = {item["state"] for item in states}
-        self.assertIn("EDGE_AVOID", names)
-        self.assertNotIn("WHITE_ESCAPE", names)
-
-    def test_axis_replay_contains_edge_and_center_sections(self):
-        states = replay("中轴.csv")
-        names = [item["state"] for item in states]
-        self.assertIn("EDGE_AVOID", names[:300])
-        self.assertIn("CRUISE", names)
-        protective = {"EDGE_AVOID", "RECOVER_FORWARD", "RECOVER_BACKWARD", "SAFE_STOP"}
-        self.assertTrue(protective & set(names[-400:]))
-
-    def test_updated_inner_outer_data_is_safe_reference(self):
-        files = (
-            "更内环侧向移动车头朝武字反方向.csv",
-            "更内环侧向移动车头朝武字方向.csv",
-            "更内环平行移动车头朝内.csv",
-            "更内环平行移动车头朝外.csv",
+def feed(controller, raw, count, start=0.0, step=0.02, healthy=True):
+    result = None
+    for index in range(count):
+        result = controller.update(
+            raw, now=start + index * step, healthy=healthy,
         )
-        for filename in files:
-            states = replay(filename)
-            names = {item["state"] for item in states}
-            self.assertFalse(
-                {"EDGE_TURN", "WHITE_ESCAPE", "SAFE_STOP"} & names,
-                filename,
-            )
+    return result
 
-    def test_sensor_channel_mapping_matches_collection_labels(self):
-        # 新车接线左右插反（2026-08-14 scan 确认），left/right 通道对调。
+
+def replay(path):
+    controller = RingPatrolController()
+    results = []
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        for row in csv.DictReader(handle):
+            try:
+                raw = {
+                    name: float(row[name])
+                    for name in GrayRiskModel.NAMES
+                }
+                now = float(row["t"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            healthy = float(row.get("healthy", 1) or 0) > 0.0
+            results.append(controller.update(raw, now=now, healthy=healthy))
+    return results
+
+
+class RingPatrolTest(unittest.TestCase):
+    def test_sensor_channel_mapping_matches_new_car_collection(self):
         self.assertEqual(
             {"front": 2, "rear": 3, "left": 1, "right": 0},
             GRAY_CHANNELS,
         )
 
-    def test_single_sample_jump_is_filtered(self):
-        controller = RingPatrolController()
-        raw = dict(GRAY_CENTER_REFERENCE)
-        for index in range(10):
-            sample = dict(raw)
-            if index == 5:
-                sample["front"] = 6000.0
-            result = controller.update(sample, now=index * 0.02)
-            self.assertNotEqual("WHITE_ESCAPE", result["state"])
-
-    def white_result(self, *sensors):
-        controller = RingPatrolController()
-        # 其余路按边缘暗值取值，模拟边界白（zone 低，通过白边门槛）。
-        sample = dict(GRAY_EDGE_REFERENCE)
-        for sensor in sensors:
-            sample[sensor] = GRAY_WHITE_REFERENCE[sensor]
-        result = None
-        for index in range(6):
-            result = controller.update(sample, now=index * 0.02)
-        self.assertIn(result["state"], ("WHITE_ESCAPE", "EDGE_TURN"))
-        return result
-
-    def white_command(self, sensor):
-        result = self.white_result(sensor)
-        return result["left"], result["right"]
-
-    def test_front_white_commands_reverse(self):
-        left, right = self.white_command("front")
-        self.assertLess(left, 0)
-        self.assertLess(right, 0)
-
-    def test_rear_white_commands_forward(self):
-        left, right = self.white_command("rear")
-        self.assertGreater(left, 0)
-        self.assertGreater(right, 0)
-
-    def test_left_white_turns_180_degrees(self):
-        result = self.white_result("left")
-        self.assertEqual("EDGE_TURN", result["state"])
-        self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
-        self.assertLess(result["left"] * result["right"], 0)
-
-    def test_right_white_turns_180_degrees(self):
-        result = self.white_result("right")
-        self.assertEqual("EDGE_TURN", result["state"])
-        self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
-        self.assertLess(result["left"] * result["right"], 0)
-
-    def test_big_turn_completes_even_if_white_is_still_visible(self):
-        sample = dict(GRAY_EDGE_REFERENCE)
-        sample["left"] = GRAY_WHITE_REFERENCE["left"]
-        controller = RingPatrolController()
-        result = None
-        for index in range(5):
-            result = controller.update(sample, now=index * 0.02)
-        self.assertEqual("EDGE_TURN", result["state"])
-        duration = MOTOR_TURN_CALIBRATION[controller.turn_direction][
-            PATROL_EDGE_TURN_ANGLE][1]
-        result = controller.update(
-            sample, now=controller.state_started + duration + 0.001,
-        )
-        self.assertEqual("RECOVER_FORWARD", result["state"])
-        self.assertEqual((PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED),
-                         (result["left"], result["right"]))
-
-    def test_side_gray_uses_forward_arc_before_danger(self):
-        # 弧线背离暗侧：左端变暗→右转离开，右端变暗→左转离开。
+    def test_cruise_is_straight_and_graded_by_zone(self):
         cases = (
-            ("left", (640, 400), "right"),
-            ("right", (400, 640), "left"),
+            (1.20, "CRUISE", PATROL_CRUISE_LINEAR),
+            (0.80, "MEDIUM_CRUISE", PATROL_MEDIUM_LINEAR),
         )
-        for sensor, command, direction in cases:
-            scores = {name: 0.55 for name in GRAY_CENTER_REFERENCE}
-            scores[sensor] = 0.10
-            controller = RingPatrolController()
-            result = None
-            for index in range(5):
-                result = controller.update(raw_at_zone_components(**scores), now=index * 0.02)
-            self.assertEqual("EDGE_AVOID", result["state"])
-            self.assertEqual(command, (result["left"], result["right"]))
-            self.assertEqual(direction, result["turn_direction"])
-            self.assertGreater(result["left"] * result["right"], 0)
+        for zone, state, speed in cases:
+            result = feed(RingPatrolController(), raw_at_zone(zone), 5)
+            self.assertEqual(state, result["state"])
+            self.assertEqual((speed, speed), (result["left"], result["right"]))
 
-    def test_side_arc_uses_big_turn_if_gray_does_not_improve(self):
-        scores = {name: 0.20 for name in GRAY_CENTER_REFERENCE}
-        scores["left"] = 0.00
-        controller = RingPatrolController()
-        result = None
-        for index in range(40):
-            result = controller.update(raw_at_zone_components(**scores), now=index * 0.02)
-        self.assertEqual("EDGE_TURN", result["state"])
-        self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
-        self.assertLess(result["left"] * result["right"], 0)
-
-    def test_side_arc_switches_directly_to_180_turn(self):
-        scores = {name: 0.20 for name in GRAY_CENTER_REFERENCE}
-        scores["left"] = 0.00
-        controller = RingPatrolController()
-        switched = None
-        for index in range(15):
-            result = controller.update(
-                raw_at_zone_components(**scores), now=index * 0.02
-            )
-            if result["state"] == "EDGE_TURN":
-                switched = result
-                break
-        self.assertIsNotNone(switched)
-        self.assertEqual(PATROL_EDGE_TURN_ANGLE, switched["turn_angle"])
-        self.assertLess(switched["left"] * switched["right"], 0)
-
-    def test_latest_patrol_start_does_not_trigger_big_turn(self):
-        path = os.path.join(DATA_DIR, "patrol_small_big_turn1.csv")
-        with open(path, newline="", encoding="utf-8-sig") as handle:
-            rows = [
-                row for row in csv.DictReader(handle)
-                if float(row["front"]) > 0.0
-            ][:10]
-        controller = RingPatrolController()
-        states = []
-        for row in rows:
-            raw = {
-                name: float(row[name])
-                for name in ("front", "rear", "left", "right")
-            }
-            states.append(controller.update(raw, now=float(row["t"])))
-        self.assertNotIn("EDGE_TURN", {item["state"] for item in states})
-        self.assertGreater(states[-1]["observation"]["zone_score"], 0.75)
-
-    def test_sensor_fault_stops(self):
-        controller = RingPatrolController()
-        result = controller.update(dict(GRAY_EDGE_REFERENCE), healthy=False)
-        self.assertEqual((0, 0), (result["left"], result["right"]))
-        self.assertEqual("SENSOR_STOP", result["state"])
-
-    def test_all_nonzero_commands_clear_motor_deadband(self):
-        states = replay("中轴.csv") + replay("边缘.csv")
-        for item in states:
-            for command in (item["left"], item["right"]):
-                if command:
-                    self.assertGreaterEqual(abs(command), PATROL_MIN_ACTIVE_SPEED)
-
-    def test_zone_score_applies_graded_speed_limits(self):
-        cases = (
-            (1.00, "fast", RingPatrolController._mix(
-                PATROL_CRUISE_LINEAR, PATROL_CRUISE_TURN)),
-            (0.88, "medium", RingPatrolController._mix(
-                PATROL_MEDIUM_LINEAR, PATROL_MEDIUM_TURN)),
+    def test_front_edge_retreats_before_135_degree_turn(self):
+        raw = raw_at_zone_components(
+            front=0.0, rear=0.4, left=0.2, right=0.2,
         )
-        for zone_score, level, command in cases:
-            controller = RingPatrolController()
-            result = None
-            for index in range(5):
-                result = controller.update(raw_at_zone(zone_score), now=index * 0.02)
-            self.assertEqual(level, result["speed_level"])
-            self.assertEqual(command, (result["left"], result["right"]))
-
-    def test_low_zone_starts_avoidance_before_hard_edge_confirmation(self):
-        scores = {name: 0.55 for name in GRAY_CENTER_REFERENCE}
-        scores["left"] = 0.10
         controller = RingPatrolController()
-        result = None
-        for index in range(3):
-            result = controller.update(raw_at_zone_components(**scores), now=index * 0.02)
+        result = feed(controller, raw, 5)
         self.assertEqual("EDGE_AVOID", result["state"])
-        # 左端变暗 → 右转离开（背离暗侧）。
         self.assertEqual(
-            RingPatrolController._mix(PATROL_EDGE_AVOID_LINEAR, PATROL_EDGE_AVOID_TURN),
+            (-PATROL_RECOVER_SPEED, -PATROL_RECOVER_SPEED),
             (result["left"], result["right"]),
         )
 
-    def test_white_escape_uses_minimum_active_speed(self):
-        for sensor in ("front", "rear"):
-            result = self.white_result(sensor)
-            self.assertEqual("danger", result["speed_level"])
-            self.assertEqual(
-                (PATROL_MIN_ACTIVE_SPEED, PATROL_MIN_ACTIVE_SPEED),
-                (abs(result["left"]), abs(result["right"])),
-            )
+        result = controller.update(
+            raw,
+            now=controller.state_started + PATROL_EDGE_RETREAT_SECONDS + 0.001,
+        )
+        self.assertEqual("EDGE_TURN", result["state"])
+        self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
+        self.assertLess(result["left"] * result["right"], 0)
 
-    def test_per_sensor_values_are_normalized_before_fusion(self):
-        model = configured_gray_model()
-        observation = None
-        for _ in range(3):
-            observation = model.update(raw_at_zone(0.40))
-        for value in observation["zone"].values():
-            self.assertAlmostEqual(0.40, value, places=6)
-        self.assertAlmostEqual(0.40, observation["zone_score"], places=6)
+    def test_clear_rear_edge_moves_forward_before_turn(self):
+        raw = raw_at_zone_components(
+            front=0.4, rear=0.0, left=0.2, right=0.2,
+        )
+        result = feed(RingPatrolController(), raw, 5)
+        self.assertEqual("EDGE_AVOID", result["state"])
+        self.assertEqual(
+            (PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED),
+            (result["left"], result["right"]),
+        )
+
+    def test_front_dark_trend_triggers_early_retreat(self):
+        raw = raw_at_zone_components(
+            front=0.45, rear=1.00, left=0.80, right=0.80,
+        )
+        result = feed(RingPatrolController(), raw, 7)
+        self.assertEqual("EDGE_AVOID", result["state"])
+        self.assertIn("提前离边", result["reason"])
+
+    def test_turn_completes_into_forward_recovery(self):
+        edge = raw_at_zone_components(
+            front=0.0, rear=0.4, left=0.2, right=0.2,
+        )
+        controller = RingPatrolController()
+        feed(controller, edge, 5)
+        turn = feed(
+            controller,
+            raw_at_zone(0.8),
+            3,
+            start=controller.state_started + PATROL_EDGE_RETREAT_SECONDS + 0.001,
+        )
+        duration = MOTOR_TURN_CALIBRATION[turn["turn_direction"]][
+            PATROL_EDGE_TURN_ANGLE
+        ][1]
+        result = controller.update(
+            raw_at_zone(0.8),
+            now=controller.state_started + duration + 0.001,
+        )
+        self.assertEqual("RECOVER_FORWARD", result["state"])
+        self.assertEqual(
+            (PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED),
+            (result["left"], result["right"]),
+        )
+
+        result = feed(
+            controller,
+            raw_at_zone(0.8),
+            3,
+            start=controller.state_started + PATROL_RECOVER_SECONDS + 0.001,
+        )
+        self.assertIn(result["state"], ("MEDIUM_CRUISE", "CRUISE"))
+
+    def test_deep_dark_during_turn_restarts_retreat(self):
+        edge = raw_at_zone_components(
+            front=0.0, rear=0.4, left=0.2, right=0.2,
+        )
+        controller = RingPatrolController()
+        feed(controller, edge, 5)
+        feed(
+            controller,
+            raw_at_zone(0.8),
+            3,
+            start=controller.state_started + PATROL_EDGE_RETREAT_SECONDS + 0.001,
+        )
+        deep = raw_at_zone_components(
+            front=-0.8, rear=0.2, left=0.2, right=0.2,
+        )
+        result = feed(controller, deep, 2, start=controller.state_started + 0.02)
+        self.assertEqual("EDGE_AVOID", result["state"])
+        self.assertIn("深暗", result["reason"])
+
+    def test_front_white_at_edge_commands_reverse(self):
+        sample = raw_at_zone(0.0)
+        sample["front"] = GRAY_WHITE_REFERENCE["front"]
+        result = feed(RingPatrolController(), sample, 6)
+        self.assertEqual("WHITE_ESCAPE", result["state"])
+        self.assertEqual(
+            (-PATROL_MIN_ACTIVE_SPEED, -PATROL_MIN_ACTIVE_SPEED),
+            (result["left"], result["right"]),
+        )
+
+    def test_center_white_mark_does_not_trigger_escape(self):
+        sample = raw_at_zone(1.2)
+        sample["front"] = GRAY_WHITE_REFERENCE["front"]
+        result = feed(RingPatrolController(), sample, 10)
+        self.assertNotEqual("WHITE_ESCAPE", result["state"])
+
+    def test_sensor_fault_stops(self):
+        result = RingPatrolController().update(
+            dict(GRAY_CENTER_REFERENCE), now=0.0, healthy=False,
+        )
+        self.assertEqual("SENSOR_STOP", result["state"])
+        self.assertEqual((0, 0), (result["left"], result["right"]))
+
+    def test_rearm_restarts_retreat_timer(self):
+        controller = RingPatrolController()
+        feed(controller, raw_at_zone(1.0), 3)
+        controller.rearm(now=10.0)
+        self.assertEqual("EDGE_AVOID", controller.state)
+        self.assertEqual(10.0, controller.state_started)
+        result = controller.update(raw_at_zone(1.0), now=10.1)
+        self.assertEqual("EDGE_AVOID", result["state"])
+
+    def test_diagonal_white_edge_restarts_retreat_before_forward_recovery(self):
+        path = os.path.join(DATA_DIR, DIAGONAL_WHITE_EDGE_LOG)
+        results = replay(path)
+        reasons = [item["reason"] for item in results]
+        self.assertTrue(
+            any("斜压白边" in reason for reason in reasons),
+            DIAGONAL_WHITE_EDGE_LOG,
+        )
+        self.assertNotIn(
+            "RECOVER_FORWARD",
+            {item["state"] for item in results},
+            DIAGONAL_WHITE_EDGE_LOG,
+        )
+        self.assertEqual("EDGE_AVOID", results[-1]["state"])
+
+    def test_manual_diagonal_trials_interrupt_forward_recovery(self):
+        results = replay(os.path.join(DATA_DIR, MANUAL_DIAGONAL_TRIAL_LOG))
+        protected = [
+            item for item in results
+            if "车身斜压白边" in item["reason"]
+        ]
+        self.assertTrue(protected, MANUAL_DIAGONAL_TRIAL_LOG)
+        self.assertTrue(
+            all(item["state"] == "EDGE_AVOID" for item in protected),
+            MANUAL_DIAGONAL_TRIAL_LOG,
+        )
+
+        run = 0
+        max_run = 0
+        for item in results:
+            zone = item["observation"]["zone"]
+            risky_forward = (
+                item["state"] == "RECOVER_FORWARD"
+                and min(zone["left"], zone["right"])
+                < PATROL_DIAGONAL_SIDE_ZONE
+                and abs(zone["left"] - zone["right"])
+                >= PATROL_DIAGONAL_TURN_DELTA
+            )
+            run = run + 1 if risky_forward else 0
+            max_run = max(max_run, run)
+        self.assertLess(max_run, PATROL_DIAGONAL_CONFIRM)
+
+    def test_shovel_edge_logs_preheat_and_retreat_on_first_ready_frame(self):
+        for filename in (SHOVEL_FRONT_EDGE_LOG, SHOVEL_PREHEAT_EDGE_LOG):
+            results = replay(os.path.join(DATA_DIR, filename))
+            ready = [item for item in results if item["observation"]["ready"]]
+            self.assertTrue(ready, filename)
+            self.assertTrue(all(item["shovel_preheat"] for item in ready), filename)
+            self.assertEqual("EDGE_AVOID", ready[0]["state"], filename)
+            self.assertLess(ready[0]["left"], 0, filename)
+            self.assertLess(ready[0]["right"], 0, filename)
+
+    def test_safe_inner_does_not_preheat_shovel(self):
+        result = feed(
+            RingPatrolController(),
+            raw_at_zone(PATROL_SHOVEL_PREHEAT_FRONT_ZONE + 0.10),
+            5,
+        )
+        self.assertFalse(result["shovel_preheat"])
+
+    def test_recorded_patrol_logs_complete_cycle_with_valid_commands(self):
+        paths = [
+            path
+            for path in sorted(glob.glob(os.path.join(DATA_DIR, "patrol_*.csv")))
+            if os.path.basename(path) != DIAGONAL_WHITE_EDGE_LOG
+        ]
+        self.assertTrue(paths)
+        required = {"EDGE_AVOID", "EDGE_TURN", "RECOVER_FORWARD"}
+        for path in paths:
+            results = replay(path)
+            states = {item["state"] for item in results}
+            self.assertTrue(required <= states, os.path.basename(path))
+            self.assertTrue(
+                {"CRUISE", "MEDIUM_CRUISE"} & states,
+                os.path.basename(path),
+            )
+            self.assertNotIn("SAFE_STOP", states, os.path.basename(path))
+            for item in results:
+                if item["state"] == "EDGE_TURN":
+                    self.assertEqual(PATROL_EDGE_TURN_ANGLE, item["turn_angle"])
+                for command in (item["left"], item["right"]):
+                    self.assertLessEqual(abs(command), PATROL_COMMAND_LIMIT)
+                    if command:
+                        self.assertGreaterEqual(
+                            abs(command), PATROL_MIN_ACTIVE_SPEED,
+                        )
 
     def test_gray_model_csv_matches_runtime_references(self):
         path = os.path.join(DATA_DIR, "gray_model.csv")
@@ -318,50 +322,15 @@ class RingPatrolTest(unittest.TestCase):
             rows = {row["sensor"]: row for row in csv.DictReader(handle)}
         for name in GRAY_CENTER_REFERENCE:
             self.assertAlmostEqual(
-                GRAY_EDGE_REFERENCE[name], float(rows[name]["edge_reference"]), places=6
+                GRAY_EDGE_REFERENCE[name],
+                float(rows[name]["edge_reference"]),
+                places=6,
             )
             self.assertAlmostEqual(
-                GRAY_CENTER_REFERENCE[name], float(rows[name]["center_reference"]), places=6
+                GRAY_CENTER_REFERENCE[name],
+                float(rows[name]["center_reference"]),
+                places=6,
             )
-
-    def test_rear_edge_uses_big_turn_after_confirmation(self):
-        raw = raw_at_zone_components(front=0.20, rear=0.00, left=0.20, right=0.20)
-        controller = RingPatrolController()
-        result = None
-        for index in range(5):
-            result = controller.update(raw, now=index * 0.02)
-        self.assertEqual("EDGE_TURN", result["state"])
-        self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
-
-    def test_front_edge_uses_big_turn_after_confirmation(self):
-        raw = raw_at_zone_components(front=0.00, rear=0.20, left=0.20, right=0.20)
-        controller = RingPatrolController()
-        result = None
-        for index in range(5):
-            result = controller.update(raw, now=index * 0.02)
-        self.assertEqual("EDGE_TURN", result["state"])
-        self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
-
-    def test_real_edge_log_uses_only_calibrated_big_turns(self):
-        states = replay("patrol_speed_test4.csv")
-        turns = []
-        for item in states:
-            if item["left"] * item["right"] < 0:
-                turns.append(item)
-                self.assertEqual("EDGE_TURN", item["state"])
-                self.assertEqual(PATROL_EDGE_TURN_ANGLE, item["turn_angle"])
-        self.assertTrue(turns)
-
-    def test_failed_direction_search_keeps_alternating_recover(self):
-        raw = raw_at_zone_components(front=0.20, rear=0.00, left=0.20, right=0.20)
-        controller = RingPatrolController()
-        result = None
-        for index in range(350):
-            result = controller.update(raw, now=index * 0.02)
-        self.assertIn(result["state"], ("RECOVER_FORWARD", "RECOVER_BACKWARD"))
-        self.assertNotEqual((0, 0), (result["left"], result["right"]))
-        result = controller.update(raw, now=7.5)
-        self.assertIn(result["state"], ("RECOVER_FORWARD", "RECOVER_BACKWARD"))
 
 
 if __name__ == "__main__":

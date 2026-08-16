@@ -1,0 +1,8 @@
+parameter,value,source,note
+filter_window,9,三组固定姿态 CSV,滚动中值滤波窗口
+diff_low,-75.1,左偏20度且离墙居中位置.csv / 正对墙且离墙居中位置.csv,低于此值表示车头左偏，需要右转
+diff_high,63.5,正对墙且离墙居中位置.csv / 右偏20度且离墙居中位置.csv,高于此值表示车头右偏，需要左转
+center_confirm,3,控制防抖,连续正对帧数
+signal_min,296.0,正对着墙且距离墙最远.csv / 三组固定姿态 CSV,低于此峰值表示离墙过远，需要靠墙脉冲
+low_gap,118.2,左偏 p95 到正对 p05,低侧分类安全间隔
+high_gap,61.0,正对 p95 到右偏 p05,高侧分类安全间隔

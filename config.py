@@ -75,12 +75,13 @@ GRAY_WHITE_CLEAR = {
 GRAY_NEAR_EDGE_ENTER = 0.35
 GRAY_NEAR_EDGE_CLEAR = 0.65
 
-# ---------- 前头 ADC git对齐（ir.py IrAlignmentModel 构造参数；来源：data/front_adc_model.csv） ----------
+# ---------- 前头 ADC git对齐（ir.py IrAlignmentModel 构造参数；来源：data/front_adc_model.csv，
+# 新车 2026-08-15 四组固定姿态重采重算：左偏/正对居中/右偏/正对最远，通道 7/6） ----------
 IR_ALIGNMENT_FILTER_WINDOW = 9
-IR_ALIGNMENT_DIFF_LOW = 331.0
-IR_ALIGNMENT_DIFF_HIGH = 497.0
+IR_ALIGNMENT_DIFF_LOW = -75.1
+IR_ALIGNMENT_DIFF_HIGH = 63.5
 IR_ALIGNMENT_CONFIRM = 3
-IR_ALIGNMENT_SIGNAL_MIN = 377.0
+IR_ALIGNMENT_SIGNAL_MIN = 296.0
 
 # 电机修正（up_controller.py UpController motor_invert/motor_swap 参数）。
 # 新车 2026-08-13 实测：invert=False（前进后退正常）；400 以下不能可靠驱动。
@@ -90,23 +91,29 @@ CHASSIS_MOTOR_SWAP = False
 # ---------- 巡台（ring_patrol.py RingPatrolController 参数） ----------
 PATROL_MIN_ACTIVE_SPEED = 400
 PATROL_CRUISE_LINEAR = 450
-PATROL_CRUISE_TURN = 50  # 输出：左 500、右 400，顺时针缓弧
-PATROL_MEDIUM_LINEAR = 425
-PATROL_MEDIUM_TURN = 25  # 输出：左 450、右 400
-# 小转调参（2026-08-14 新车两轮实测：50、80 都偏小）：输出左/右 640/400；
-# 增大转向量会更急，但要保持 linear-turn >= 400。
-PATROL_EDGE_AVOID_LINEAR = 520
-PATROL_EDGE_AVOID_TURN = 120
-PATROL_EDGE_ARC_CHECK_SECONDS = 0.50
-PATROL_EDGE_TURN_ANGLE = 180.0
-PATROL_FAST_ZONE_SCORE = 0.90
-# 小转阈值：提高会更早小转，降低会更晚小转；必须高于大转阈值。
-# 新车 2026-08-14：更内环 zone≈0.83~1.7，0.75 进入浅灰区才小转太晚，提到 0.85。
-PATROL_SMALL_TURN_ZONE_SCORE = 0.85
-# 避让退出滞回：zone 恢复到该值以上才退出 EDGE_AVOID，防 0.85 边界来回振荡。
-PATROL_EDGE_AVOID_CLEAR = 0.95
-# 小转无改善时，只有 zone 低于此值才升级 180° 大转；更内环小转不改善只继续弧线。
-PATROL_EDGE_TURN_ZONE_MAX = 0.60
+PATROL_CRUISE_TURN = 0
+PATROL_MEDIUM_LINEAR = 400
+PATROL_MEDIUM_TURN = 0
+PATROL_EDGE_RETREAT_SECONDS = 0.60
+PATROL_EDGE_TURN_ANGLE = 135.0
+PATROL_EDGE_SHALLOW_ZONE = 0.55
+PATROL_DEEP_ZONE = -0.45
+PATROL_ALTERNATE_TURN_SIGNAL = 0.40
+# 2026-08-16 patrol_20260816_091726.csv / 093316.csv：车身斜压白边时，
+# 单侧 zone 可低至 0.02~0.50，另一侧高出 1.0 以上；整体中位数仍安全，
+# 必须在转向和回中移动阶段单独拦截侧向风险。
+PATROL_DIAGONAL_SIDE_ZONE = 0.52
+PATROL_DIAGONAL_TURN_DELTA = 1.00
+PATROL_DIAGONAL_CONFIRM = 3
+PATROL_REAR_RETREAT_DELTA = 0.15
+PATROL_FAST_ZONE_SCORE = 1.10
+PATROL_EARLY_FRONT_ZONE = 0.88
+# data/边缘希望激活铲子.csv（铲子未出台）前路 zone 最大约 0.714；
+# 既有内环安全数据前路 zone 最小约 0.817，取两者中间值提前避边并预热铲子保护。
+PATROL_SHOVEL_PREHEAT_FRONT_ZONE = 0.76
+PATROL_EARLY_FRONT_ABS = PATROL_SHOVEL_PREHEAT_FRONT_ZONE
+PATROL_EARLY_CONFIRM = 1
+PATROL_RECOVER_DEEP_ZONE = -0.35
 PATROL_COMMAND_LIMIT = 1023
 
 # 转向速度/时长标定（ring_patrol.py EDGE_TURN 与 reentry.py TURN_* 共用；
@@ -131,17 +138,11 @@ MOTOR_TURN_CALIBRATION = {
 }
 PATROL_WHITE_ESCAPE_SPEED = 400
 PATROL_WHITE_ESCAPE_SECONDS = 0.6
-PATROL_RECOVER_SPEED = 550
-# 新车 2026-08-14 实测：400 速度后退 1.5 秒更合理（1.0 仍偏短）。
+PATROL_RECOVER_SPEED = 400
 PATROL_RECOVER_SECONDS = 1.5
-PATROL_RECOVER_STEP_CM = (
-    21.5  # 旧车 400×0.6s 距离；新车 550×1.5s 待重标（直线标定暂缓）
-)
-PATROL_RECOVER_MIN_IMPROVEMENT = 0.03
-
-PATROL_WHITE_CONFIRM = 2
-# 白边判定 zone 门槛：武字白实测 zone>=0.7，边界白 <0.3，取 0.5 区分。
-PATROL_WHITE_ZONE_MAX = 0.5
+PATROL_RECOVER_RELEASE_ZONE = 0.55
+PATROL_RECOVER_STEP_CM = 21.5  # 400×0.6s 实测退离距离
+PATROL_WHITE_CONFIRM = 4
 PATROL_NEAR_CONFIRM = 3
 PATROL_STALE_SECONDS = 0.20
 
@@ -151,8 +152,8 @@ REENTRY_CORRECT_TURN_SPEED = PATROL_MIN_ACTIVE_SPEED
 REENTRY_CORRECT_TIMEOUT = 3.0
 REENTRY_APPROACH_SPEED = 700  # 大力前冲撞墙速度（一次冲到底，撞上立即停车防堵转）
 REENTRY_APPROACH_TIMEOUT = 2.0  # 大力冲撞兜底时长：超时未贴墙则停车（真机调）
-REENTRY_APPROACH_TOUCH_SIGNAL = 1000.0  # 前头模拟红外 signal≥此值=已贴墙；来源 front_adc_summary.csv（正对着墙 p99≈1315、居中 p99≈710）
-REENTRY_REVERSE_SPEED = PATROL_RECOVER_SPEED  # 掉台矫正完毕倒车速度（与巡台恢复分开调）
+REENTRY_APPROACH_TOUCH_SIGNAL = 1060.0  # 前头模拟红外 signal≥此值=已贴墙；新车 2026-08-15：贴墙 p99≈1363、居中 p99≈763 取中点
+REENTRY_REVERSE_SPEED = 550  # 掉台矫正完毕倒车速度，与巡台恢复分开调
 REENTRY_REVERSE_TIMEOUT = 3.0
 
 # ---------- 铲子防掉落（shovel_guard.py ShovelGuard 参数） ----------

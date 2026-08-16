@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""RoboCup 生产入口：巡台为常态，掉台回归状态机可抢占电机控制。"""
+"""RoboCup 生产入口：掉台回归、铲子保险与巡台统一仲裁。"""
 
 import argparse
 import csv
@@ -20,12 +20,15 @@ from config import (
     IR_ADC_MAX,
     IR_CHANNELS,
     PATROL_STALE_SECONDS,
+    SHOVEL_ADC_MAX,
+    SHOVEL_IR_CHANNELS,
 )
 from digi_ir import DigiIR
 from gray import GrayRiskModel, GraySensor
 from ir import IrSensor
 from reentry import ReentryController
 from ring_patrol import RingPatrolController
+from shovel_guard import ShovelGuard
 
 
 class RobotController:
@@ -34,9 +37,11 @@ class RobotController:
     def __init__(self):
         self.patrol = RingPatrolController()
         self.reentry = ReentryController()
+        self.shovel_guard = ShovelGuard()
         self._reentry_active = False
+        self._shovel_guard_active = False
 
-    def update(self, gray_raw, ir, analog, now=None, healthy=True):
+    def update(self, gray_raw, ir, analog, shovel=None, now=None, healthy=True):
         now = time.monotonic() if now is None else float(now)
         reentry_result = self.reentry.update(
             gray_raw, ir, analog, now=now, healthy=healthy
@@ -44,6 +49,8 @@ class RobotController:
 
         if reentry_result["state"] != "WAIT":
             self._reentry_active = True
+            self.shovel_guard = ShovelGuard()
+            self._shovel_guard_active = False
             return self._result("reentry", reentry_result)
 
         if self._reentry_active:
@@ -52,6 +59,27 @@ class RobotController:
             self._reentry_active = False
 
         patrol_result = self.patrol.update(gray_raw, now=now, healthy=healthy)
+        shovel = shovel or {"left": 0.0, "right": 0.0, "valid": False}
+        shovel_preheat = bool(patrol_result["shovel_preheat"])
+        shovel_result = self.shovel_guard.update(
+            shovel,
+            active=shovel_preheat or self.shovel_guard.state != "IDLE",
+            now=now,
+            healthy=healthy,
+        )
+        if shovel_result["state"] != "IDLE":
+            self._shovel_guard_active = True
+            selected = dict(shovel_result)
+            selected["observation"] = patrol_result["observation"]
+            selected["shovel_preheat"] = shovel_preheat
+            return self._result("shovel_guard", selected)
+
+        if self._shovel_guard_active:
+            self.patrol = RingPatrolController()
+            self._shovel_guard_active = False
+            patrol_result = self.patrol.update(
+                gray_raw, now=now, healthy=healthy
+            )
         return self._result("patrol", patrol_result)
 
     def _result(self, mode, selected):
@@ -60,6 +88,8 @@ class RobotController:
             "mode": mode,
             "patrol_state": self.patrol.state,
             "reentry_state": self.reentry.state,
+            "shovel_state": self.shovel_guard.state,
+            "shovel_preheat": bool(result.get("shovel_preheat", False)),
         })
         return result
 
@@ -94,14 +124,20 @@ def run(args):
         channels=IR_CHANNELS,
         adc_max=IR_ADC_MAX,
     )
+    shovel_sensor = IrSensor(
+        adc_reader=lambda: hardware.adc_data,
+        channels=SHOVEL_IR_CHANNELS,
+        adc_max=SHOVEL_ADC_MAX,
+    )
     robot = RobotController()
     fields = (
         "t", "front", "rear", "left", "right",
         "zone_front", "zone_rear", "zone_left", "zone_right", "zone_score",
         "ir_front", "ir_rear", "ir_left_front", "ir_left_rear",
         "ir_right_front", "ir_right_rear", "ir_valid", "analog_diff",
-        "mode", "state", "patrol_state", "reentry_state", "reason",
-        "left_cmd", "right_cmd", "healthy",
+        "shovel_left", "shovel_right", "shovel_valid", "shovel_preheat",
+        "mode", "state", "patrol_state", "reentry_state", "shovel_state",
+        "reason", "left_cmd", "right_cmd", "healthy",
     )
     start = time.monotonic()
     period = 1.0 / args.hz
@@ -114,9 +150,10 @@ def run(args):
                 gray_raw = gray_sensor.read_raw()
                 ir_states = digi.read_states()
                 analog_raw = analog_sensor.read_raw()
+                shovel_raw = shovel_sensor.read_raw()
                 healthy = hardware.healthy and not hardware.stale(PATROL_STALE_SECONDS)
                 result = robot.update(
-                    gray_raw, ir_states, analog_raw,
+                    gray_raw, ir_states, analog_raw, shovel_raw,
                     now=loop_start, healthy=healthy,
                 )
                 hardware.move_cmd(result["left"], result["right"])
@@ -134,10 +171,15 @@ def run(args):
                     **{"ir_" + name: int(ir_states[name]) for name in DIGI_IR_PINS},
                     "ir_valid": int(ir_states["valid"]),
                     "analog_diff": round(analog_diff, 1),
+                    "shovel_left": shovel_raw["left"],
+                    "shovel_right": shovel_raw["right"],
+                    "shovel_valid": int(shovel_raw["valid"]),
+                    "shovel_preheat": int(result.get("shovel_preheat", False)),
                     "mode": result["mode"],
                     "state": result["state"],
                     "patrol_state": result["patrol_state"],
                     "reentry_state": result["reentry_state"],
+                    "shovel_state": result["shovel_state"],
                     "reason": result["reason"],
                     "left_cmd": result["left"],
                     "right_cmd": result["right"],

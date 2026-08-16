@@ -19,6 +19,11 @@ from config import (
     IR_ALIGNMENT_FILTER_WINDOW,
     IR_ALIGNMENT_SIGNAL_MIN,
     MOTOR_TURN_CALIBRATION,
+    PATROL_SHOVEL_PREHEAT_FRONT_ZONE,
+    SHOVEL_FILTER_WINDOW,
+    SHOVEL_HANG_CONFIRM,
+    SHOVEL_REVERSE_MIN_SECONDS,
+    SHOVEL_REVERSE_SPEED,
 )
 from main import RobotController
 
@@ -31,10 +36,22 @@ def ir_states(**active):
 
 
 ANALOG_VALID = {"left": 500.0, "right": 500.0, "valid": True}
+SHOVEL_ON_STAGE = {"left": 20.0, "right": 20.0, "valid": True}
+SHOVEL_HANGING = {"left": 1600.0, "right": 1600.0, "valid": True}
 FALLEN_GRAY = {
     name: max(0.0, value - 100.0)
     for name, value in GRAY_EDGE_REFERENCE.items()
 }
+
+
+def gray_at_zone(**scores):
+    return {
+        name: (
+            GRAY_EDGE_REFERENCE[name]
+            + scores[name] * (GRAY_CENTER_REFERENCE[name] - GRAY_EDGE_REFERENCE[name])
+        )
+        for name in GRAY_CENTER_REFERENCE
+    }
 
 
 class RobotControllerTest(unittest.TestCase):
@@ -42,6 +59,7 @@ class RobotControllerTest(unittest.TestCase):
         robot = RobotController()
         self.assertEqual(GRAY_FILTER_WINDOW, robot.patrol.model.window)
         self.assertEqual(GRAY_FILTER_WINDOW, robot.reentry.model.window)
+        self.assertEqual(SHOVEL_FILTER_WINDOW, robot.shovel_guard.window)
         self.assertEqual(
             IR_ALIGNMENT_FILTER_WINDOW, robot.reentry._alignment.window,
         )
@@ -51,11 +69,12 @@ class RobotControllerTest(unittest.TestCase):
             IR_ALIGNMENT_SIGNAL_MIN, robot.reentry._alignment.signal_min,
         )
 
-    def update(self, robot, gray, ir=None, now=0.0):
+    def update(self, robot, gray, ir=None, shovel=None, now=0.0):
         return robot.update(
             gray,
             ir_states() if ir is None else ir,
             ANALOG_VALID,
+            SHOVEL_ON_STAGE if shovel is None else shovel,
             now=now,
             healthy=True,
         )
@@ -72,9 +91,10 @@ class RobotControllerTest(unittest.TestCase):
         robot = RobotController()
         result = self.warm_patrol(robot)
         self.assertEqual("patrol", result["mode"])
-        self.assertEqual("CRUISE", result["state"])
+        self.assertEqual("MEDIUM_CRUISE", result["state"])
         self.assertGreater(result["left"], 0)
         self.assertGreater(result["right"], 0)
+        self.assertFalse(result["shovel_preheat"])
 
     def test_reentry_preempts_patrol_after_fall_trigger(self):
         robot = RobotController()
@@ -109,6 +129,56 @@ class RobotControllerTest(unittest.TestCase):
         self.assertIsNot(previous_patrol, robot.patrol)
         self.assertEqual("WARMUP", result["state"])
         self.assertEqual((0, 0), (result["left"], result["right"]))
+
+    def test_preheated_shovel_guard_stops_then_reverses(self):
+        robot = RobotController()
+        edge = gray_at_zone(
+            front=PATROL_SHOVEL_PREHEAT_FRONT_ZONE - 0.05,
+            rear=1.0,
+            left=1.0,
+            right=1.0,
+        )
+        now = 0.0
+        result = None
+        for _ in range(SHOVEL_FILTER_WINDOW + 2):
+            result = self.update(
+                robot, edge, shovel=SHOVEL_ON_STAGE, now=now,
+            )
+            now += 0.02
+        self.assertEqual("patrol", result["mode"])
+        self.assertTrue(result["shovel_preheat"])
+        self.assertEqual("IDLE", result["shovel_state"])
+
+        for _ in range(SHOVEL_FILTER_WINDOW // 2 + 1):
+            result = self.update(
+                robot, edge, shovel=SHOVEL_HANGING, now=now,
+            )
+            now += 0.02
+        self.assertEqual("shovel_guard", result["mode"])
+        self.assertEqual("HANGED", result["state"])
+        self.assertEqual((0, 0), (result["left"], result["right"]))
+
+        for _ in range(SHOVEL_HANG_CONFIRM - 1):
+            result = self.update(
+                robot, edge, shovel=SHOVEL_HANGING, now=now,
+            )
+            now += 0.02
+        self.assertEqual("REVERSE", result["state"])
+        self.assertEqual(
+            (-SHOVEL_REVERSE_SPEED, -SHOVEL_REVERSE_SPEED),
+            (result["left"], result["right"]),
+        )
+
+        previous_patrol = robot.patrol
+        now += SHOVEL_REVERSE_MIN_SECONDS
+        for _ in range(SHOVEL_FILTER_WINDOW // 2 + 1):
+            result = self.update(
+                robot, edge, shovel=SHOVEL_ON_STAGE, now=now,
+            )
+            now += 0.02
+        self.assertEqual("patrol", result["mode"])
+        self.assertIsNot(previous_patrol, robot.patrol)
+        self.assertEqual("WARMUP", result["state"])
 
 
 if __name__ == "__main__":
