@@ -28,7 +28,7 @@ FIELDS = (
     "reason", "frame_width", "frame_height", "action", "target_type",
     "confidence", "center_x", "center_y",
     "offset_x", "offset_y", "distance_cm", "dt", "error_x_normalized",
-    "filtered_error", "turn_command", "state", "left_cmd", "right_cmd",
+    "turn_command", "state", "left_cmd", "right_cmd",
     "motor_enabled",
 )
 
@@ -105,7 +105,6 @@ def run(args):
                             "distance_cm": control.get("distance_cm"),
                             "dt": _rounded(dt),
                             "error_x_normalized": _rounded(result["error_x"]),
-                            "filtered_error": _rounded(result["filtered_error"]),
                             "turn_command": result["turn_command"],
                             "state": result["state"],
                             "left_cmd": result["left"],

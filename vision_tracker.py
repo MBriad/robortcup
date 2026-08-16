@@ -1,48 +1,95 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""YOLO good 能量块横向对准控制；仅处理注入数据，不持有相机或电机。"""
+"""YOLO good 能量块追踪控制；仅处理注入数据，不持有相机或电机。"""
 
 import math
 
 from config import (
+    VISION_APPROACH_SPEED,
+    VISION_ARC_INNER_SPEED,
+    VISION_ARC_OUTER_SPEED,
+    VISION_BIG_TURN_CLEAR,
+    VISION_BIG_TURN_ENTER,
+    VISION_BIG_TURN_SPEED,
     VISION_DEAD_ZONE,
-    VISION_ERROR_FILTER_ALPHA,
-    VISION_TURN_KP,
-    VISION_TURN_MAX_SPEED,
-    VISION_TURN_MIN_SPEED,
 )
 
 
 class VisionTracker:
-    """把 YOLO 归一化横向偏差转换为左右轮原地转向命令。"""
+    """按归一化横向误差选择大转、小弧线或直线接近。"""
 
     def __init__(
-            self, filter_alpha=VISION_ERROR_FILTER_ALPHA,
-            dead_zone=VISION_DEAD_ZONE, kp=VISION_TURN_KP,
-            min_speed=VISION_TURN_MIN_SPEED,
-            max_speed=VISION_TURN_MAX_SPEED):
-        if not 0.0 < filter_alpha <= 1.0:
-            raise ValueError("filter_alpha 必须在 (0, 1] 内")
-        if not 0.0 <= dead_zone < 1.0 or not 0 < min_speed <= max_speed:
-            raise ValueError("死区或转速范围无效")
-        self.filter_alpha = float(filter_alpha)
+            self, dead_zone=VISION_DEAD_ZONE,
+            big_turn_enter=VISION_BIG_TURN_ENTER,
+            big_turn_clear=VISION_BIG_TURN_CLEAR,
+            big_turn_speed=VISION_BIG_TURN_SPEED,
+            arc_inner_speed=VISION_ARC_INNER_SPEED,
+            arc_outer_speed=VISION_ARC_OUTER_SPEED,
+            approach_speed=VISION_APPROACH_SPEED):
+        if not 0.0 <= dead_zone < big_turn_clear < big_turn_enter <= 1.0:
+            raise ValueError("视觉死区和大小转阈值顺序无效")
+        if not 0 < big_turn_speed <= 1023:
+            raise ValueError("大转速度无效")
+        if not 0 < arc_inner_speed <= arc_outer_speed <= 1023:
+            raise ValueError("小转差速无效")
+        if not 0 < approach_speed <= 1023:
+            raise ValueError("接近速度无效")
         self.dead_zone = float(dead_zone)
-        self.kp = float(kp)
-        self.min_speed = int(min_speed)
-        self.max_speed = int(max_speed)
-        self.filtered_error = None
+        self.big_turn_enter = float(big_turn_enter)
+        self.big_turn_clear = float(big_turn_clear)
+        self.big_turn_speed = int(big_turn_speed)
+        self.arc_inner_speed = int(arc_inner_speed)
+        self.arc_outer_speed = int(arc_outer_speed)
+        self.approach_speed = int(approach_speed)
+        self.big_turn_direction = None
 
-    def _stop(self, state, reason, raw_error=None):
-        self.filtered_error = None
+    def _result(self, command, state, reason, error=None, turn=0):
         return {
-            "left": 0,
-            "right": 0,
+            "left": command[0],
+            "right": command[1],
             "state": state,
             "reason": reason,
-            "error_x": raw_error,
-            "filtered_error": None,
-            "turn_command": 0,
+            "error_x": error,
+            "turn_command": turn,
         }
+
+    def _stop(self, state, reason):
+        self.big_turn_direction = None
+        return self._result((0, 0), state, reason)
+
+    def _big_turn(self, direction, error):
+        speed = self.big_turn_speed
+        if direction == "right":
+            command = (speed, -speed)
+            turn = speed
+        else:
+            command = (-speed, speed)
+            turn = -speed
+        self.big_turn_direction = direction
+        return self._result(
+            command,
+            "BIG_TURN_RIGHT" if direction == "right" else "BIG_TURN_LEFT",
+            "目标偏差较大，原地大转",
+            error,
+            turn,
+        )
+
+    def _arc(self, direction, error):
+        inner = self.arc_inner_speed
+        outer = self.arc_outer_speed
+        if direction == "right":
+            command = (outer, inner)
+            turn = outer - inner
+        else:
+            command = (inner, outer)
+            turn = inner - outer
+        return self._result(
+            command,
+            "ARC_RIGHT" if direction == "right" else "ARC_LEFT",
+            "持续差速前进并小幅对准",
+            error,
+            turn,
+        )
 
     def update(self, control):
         """处理一帧 VisionClient.get_control() 结果。"""
@@ -57,31 +104,24 @@ class VisionTracker:
         if not isinstance(offset, (int, float)) or not math.isfinite(offset):
             return self._stop("VISION_STOP", "good 目标缺少有效 offset_x")
 
-        # YOLO 服务的 offset_x 已是相对半画宽归一化后的 [-1, 1] 误差。
         error = float(offset)
-        if self.filtered_error is None:
-            self.filtered_error = error
-        else:
-            alpha = self.filter_alpha
-            self.filtered_error = alpha * error + (1.0 - alpha) * self.filtered_error
+        magnitude = abs(error)
+        if magnitude <= self.dead_zone:
+            self.big_turn_direction = None
+            speed = self.approach_speed
+            return self._result(
+                (speed, speed),
+                "APPROACH",
+                "good 能量块已居中，直线接近",
+                error,
+            )
 
-        if abs(self.filtered_error) <= self.dead_zone:
-            turn = 0
-            state = "ALIGNED"
-            reason = "good 能量块已进入中心死区"
-        else:
-            magnitude = int(round(abs(self.kp * self.filtered_error)))
-            magnitude = max(self.min_speed, min(self.max_speed, magnitude))
-            turn = magnitude if self.filtered_error > 0.0 else -magnitude
-            state = "ALIGN_RIGHT" if turn > 0 else "ALIGN_LEFT"
-            reason = "按横向误差原地对准 good 能量块"
+        direction = "right" if error > 0.0 else "left"
+        if (self.big_turn_direction == direction and
+                magnitude > self.big_turn_clear):
+            return self._big_turn(direction, error)
 
-        return {
-            "left": turn,
-            "right": -turn,
-            "state": state,
-            "reason": reason,
-            "error_x": error,
-            "filtered_error": self.filtered_error,
-            "turn_command": turn,
-        }
+        self.big_turn_direction = None
+        if magnitude >= self.big_turn_enter:
+            return self._big_turn(direction, error)
+        return self._arc(direction, error)
