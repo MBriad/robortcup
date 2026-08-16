@@ -185,3 +185,38 @@ VISION_BIG_TURN_SPEED = 400  # 原地大转；新车最低可靠转速
 VISION_ARC_INNER_SPEED = 400  # 小转内侧轮
 VISION_ARC_OUTER_SPEED = 500  # 小转外侧轮；沿用已验证的 500/400 差速
 VISION_APPROACH_SPEED = 400  # 对准后直线接近
+
+# ---------- hunt 视觉追踪与近距 bad 避让（hunt.py / dev/hunt.py） ----------
+HUNT_COLLECT_SECONDS = 15.0
+HUNT_COLLECT_LOG_DIR = "data"
+VISION_CAMERA_DEVICE = "/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
+HUNT_BAD_CENTER_ZONE = 0.15
+HUNT_BAD_CONFIRM_FRAMES = 2
+
+# ---------- 敌人搜索与推动（enemy_push.py / dev/enemy_push.py） ----------
+# 来源：enemy_push_pack 2026-08-16 真机行为；敌人推动慢档实测使用 350。
+ENEMY_PUSH_SPEED = 700
+ENEMY_SLOW_SPEED = 350
+ENEMY_SLOW_ZONE = 1.3
+ENEMY_SLOW_CONFIRM = 6
+ENEMY_RETREAT_SPEED = 400
+ENEMY_RETREAT_SECONDS = 1.0
+ENEMY_ATTACK_PAUSE_SECONDS = 0.5
+ENEMY_COOLDOWN_SECONDS = 3.0
+ENEMY_REAR_ABORT_ZONE = -0.45
+ENEMY_WHITE_ZONE = 1.4
+ENEMY_WHITE_CONFIRM = 6
+# 六路数字红外找敌的定角动作；速度/时长继续查 MOTOR_TURN_CALIBRATION。
+ENEMY_TURN_PLAN = {
+    "left_front": ("left", 45.0),
+    "right_front": ("right", 45.0),
+    "left_rear": ("left", 135.0),
+    "right_rear": ("right", 135.0),
+    "rear": (None, 180.0),  # 正后左右均可，运行时交替选择
+}
+ENEMY_REAR_FIRST_TURN = "right"
+ENEMY_STALE_SECONDS = PATROL_STALE_SECONDS
+ENEMY_DEV_HZ = 50.0
+ENEMY_DEV_SECONDS = 0.0
+ENEMY_DEV_LABEL = "enemy_push"
+ENEMY_LOG_DIR = "data"

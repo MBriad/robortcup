@@ -13,7 +13,7 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 3. **Follow karpathy-guidelines while coding**: load `Skill(karpathy-guidelines)` before each development session; simplicity first, no speculative abstraction, surgical changes.
 4. **Production/dev separation**: `main.py` is the only production hardware entry. Root strategy and sensor modules contain only injected-data logic and must not import `uptech`/`up_controller`, expose hardware or calibration CLIs, or use `DEV_MODE`. Real-hardware strategy runners and sensor collection/calibration tools live under `dev/`.
 5. **Collected data must be saved to a file** (CSV) for calibration/analysis — never hardcode values from memory.
-6. **config.py aggregates module parameters**: it was deleted; rebuild it from module parameters as modules are written (channel mapping, thresholds, sample rate, file paths).
+6. **All tunable parameters live in `config.py`**: channel mappings, polarity, speeds, thresholds, confirmation counts, durations, turn-angle plans, sample rates, camera settings, log directories, and dev CLI defaults must be defined in `config.py`. Root strategy modules and `dev/` runners must not duplicate or hardcode tunable values; they import config defaults and may accept constructor/CLI overrides only for tests or explicit experiments. State names, protocol field names, and fixed algorithm structure may remain in code. When adding a module, add its complete parameter group to `config.py` in the same change.
 7. **Never end on "tests pass"**: after implementing, explain the verification plan (how to validate on real hardware / on the bench).
 8. **Do not trust deleted config remnants**: old thresholds/channel mappings/normalization are void — re-derive everything from fresh collected data.
 
@@ -21,9 +21,9 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 
 - `uptech.py` — vendor Raspberry Pi hardware library (`UpTech`; ctypes to `libuptech.so` + pigpio): CDS servo speed/mode, 10-ch ADC read, IO input mask, LCD. **Do not edit.**
 - `up_controller.py` — driver wrapper: `move_cmd(left, right)` (CDS id 7 = left wheel, id 8 = right wheel negated; software `motor_invert`/`motor_swap` fixes), background poll thread filling `adc_data` (10 ch) / `io_data` (8-bit mask), `stale()`/`healthy` health flags, `close()` safe shutdown (stop motors → stop thread → close hardware). Raises `RuntimeError` without `uptech` (PC dev uses stubs). **Do not edit.**
-- `main.py` — production coordinator and the only match entry: updates reentry first; any reentry state other than `WAIT` preempts patrol and owns the motor command. Patrol is recreated after reentry releases control so stale timers cannot resume.
-- `ring_patrol.py` / `reentry.py` — pure strategy state machines; receive externally injected sensor data and return motor commands; no hardware ownership or CLI.
-- `dev/ring_patrol.py` / `dev/reentry.py` — independent real-hardware strategy tests and CSV logging; reentry runner also supports PC CSV replay.
+- `main.py` — production coordinator and the only match entry: owns one background `VisionClient` and arbitrates reentry/edge/shovel safety before hunt, enemy push, and patrol; emits one final motor command per loop.
+- `ring_patrol.py` / `reentry.py` / `hunt.py` / `enemy_push.py` — pure strategy state machines; receive externally injected sensor/vision data and return motor commands; no hardware ownership or CLI.
+- `dev/ring_patrol.py` / `dev/reentry.py` / `dev/hunt.py` / `dev/enemy_push.py` — independent real-hardware strategy tests and CSV logging; reentry runner also supports PC CSV replay.
 - `dev/gray_tool.py` / `dev/ir_tool.py` / `dev/digi_ir_tool.py` — sensor scan and CSV collection tools; digital IR collection saves both raw IO bits and mapped states.
 - `dev/calibrate_gray.py` — offline gray-model calibration from files already stored under `data/`.
 - `tests/test_<module>.py` — PC automated unit and replay tests, run through `unittest discover`.
@@ -39,6 +39,7 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 - `python3 dev/ring_patrol.py` — patrol-only real-hardware test and CSV log.
 - `python3 dev/reentry.py [--force-trigger]` — reentry-only real-hardware test and CSV log.
 - `python3 dev/reentry.py --replay data/<file>.csv` — PC gray CSV replay.
+- `python3 dev/enemy_push.py --seconds 0 --drive` — enemy-only search/push hardware test; YOLO runs only for background CSV logging and does not control motors.
 - `python3 dev/gray_tool.py scan|collect ...` — gray scan or CSV collection.
 - `python3 dev/ir_tool.py scan|collect ...` — analog IR scan or CSV collection.
 - `python3 dev/digi_ir_tool.py scan|collect ...` — digital IR scan or CSV collection.

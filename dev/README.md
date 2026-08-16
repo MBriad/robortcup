@@ -6,7 +6,7 @@
 ## 0. 通用原则
 
 - **生产/dev 分离**：根目录策略模块（`ring_patrol.py`、`reentry.py`、`shovel_guard.py`、
-  `vision_tracker.py` 等）只做纯逻辑，不碰硬件；本目录是唯一持有硬件的真机入口。
+  `vision_tracker.py`、`enemy_push.py` 等）只做纯逻辑，不碰硬件；本目录存放独立真机工具。
 - **数据必须落盘**：所有采集/测试都会写 CSV 到 `data/`，阈值一律从 CSV 重算，
   **禁止凭记忆手填参数**。
 - **参数统一走 [config.py](../config.py)**：通道映射、阈值、速度等默认值都从 config 注入；
@@ -34,6 +34,7 @@
 | [dev/reentry.py](reentry.py) | 掉台回归真机测试 / PC 灰度回放 | ✓(真机) | 真机 / PC |
 | [dev/shovel_guard.py](shovel_guard.py) | 铲子防掉落真机测试 / PC 回放 | ✓(真机) | 真机 / PC |
 | [dev/vision_tracker.py](vision_tracker.py) | YOLO 能量块对准真机测试 | 可选 | ✓ |
+| [dev/enemy_push.py](enemy_push.py) | 后台 YOLO + 六路红外敌人搜索/推动集成测试 | 可选 | ✓ |
 
 通用参数：`--motor-invert / --no-motor-invert`、`--motor-swap / --no-motor-swap`（电机类工具）
 覆盖 config 的 `CHASSIS_MOTOR_INVERT / CHASSIS_MOTOR_SWAP` 默认值；

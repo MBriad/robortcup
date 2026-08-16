@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""RoboCup 生产入口：掉台回归、铲子保险与巡台统一仲裁。"""
+"""RoboCup 生产入口：安全、能量块、敌人推动与巡台统一仲裁。"""
 
 import argparse
 import csv
@@ -22,13 +22,22 @@ from config import (
     PATROL_STALE_SECONDS,
     SHOVEL_ADC_MAX,
     SHOVEL_IR_CHANNELS,
+    VISION_CAMERA_DEVICE,
+    VISION_MAX_AGE_MS,
 )
 from digi_ir import DigiIR
+from enemy_push import EnemyPushController
 from gray import GrayRiskModel, GraySensor
+from hunt import HuntController
 from ir import IrSensor
 from reentry import ReentryController
 from ring_patrol import RingPatrolController
 from shovel_guard import ShovelGuard
+
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+YOLO_DIR = os.path.join(ROOT, "rpi-yolo-pi4-int8-lto-8fps")
+HUNT_ALLOWED_PATROL_STATES = ("CRUISE", "MEDIUM_CRUISE")
 
 
 class RobotController:
@@ -38,18 +47,29 @@ class RobotController:
         self.patrol = RingPatrolController()
         self.reentry = ReentryController()
         self.shovel_guard = ShovelGuard()
+        self.hunt = HuntController()
+        self.enemy = EnemyPushController(guard=self.shovel_guard)
         self._reentry_active = False
         self._shovel_guard_active = False
 
-    def update(self, gray_raw, ir, analog, shovel=None, now=None, healthy=True):
+    def update(self, gray_raw, ir, analog, shovel=None, vision=None,
+               now=None, healthy=True):
         now = time.monotonic() if now is None else float(now)
+        vision_available = (
+            isinstance(vision, dict)
+            and vision.get("sequence") is not None
+            and vision.get("status") != "error"
+        )
         reentry_result = self.reentry.update(
             gray_raw, ir, analog, now=now, healthy=healthy
         )
 
         if reentry_result["state"] != "WAIT":
+            self.hunt.cancel()
+            self.enemy.cancel()
             self._reentry_active = True
             self.shovel_guard = ShovelGuard()
+            self.enemy.guard = self.shovel_guard
             self._shovel_guard_active = False
             return self._result("reentry", reentry_result)
 
@@ -61,6 +81,24 @@ class RobotController:
         patrol_result = self.patrol.update(gray_raw, now=now, healthy=healthy)
         shovel = shovel or {"left": 0.0, "right": 0.0, "valid": False}
         shovel_preheat = bool(patrol_result["shovel_preheat"])
+
+        if self.enemy.active:
+            if patrol_result["state"] not in HUNT_ALLOWED_PATROL_STATES:
+                self.enemy.cancel()
+                self.hunt.cancel()
+                return self._result("patrol", patrol_result)
+            self.hunt.cancel()
+            enemy_result = self.enemy.update(
+                ir, patrol_result["observation"], shovel,
+                now=now, healthy=healthy, allow_start=False,
+            )
+            if enemy_result["owns_control"]:
+                selected = dict(enemy_result)
+                selected["observation"] = patrol_result["observation"]
+                selected["shovel_preheat"] = True
+                return self._result("enemy_push", selected)
+            return self._result("patrol", patrol_result)
+
         shovel_result = self.shovel_guard.update(
             shovel,
             active=shovel_preheat or self.shovel_guard.state != "IDLE",
@@ -68,6 +106,8 @@ class RobotController:
             healthy=healthy,
         )
         if shovel_result["state"] != "IDLE":
+            self.hunt.cancel()
+            self.enemy.cancel()
             self._shovel_guard_active = True
             selected = dict(shovel_result)
             selected["observation"] = patrol_result["observation"]
@@ -80,6 +120,30 @@ class RobotController:
             patrol_result = self.patrol.update(
                 gray_raw, now=now, healthy=healthy
             )
+        if patrol_result["state"] not in HUNT_ALLOWED_PATROL_STATES:
+            self.hunt.cancel()
+            self.enemy.cancel()
+            return self._result("patrol", patrol_result)
+
+        hunt_result = self.hunt.update(
+            vision, ir, now=now, healthy=healthy
+        )
+        if hunt_result["owns_control"]:
+            selected = dict(hunt_result)
+            selected["hunt_mode"] = hunt_result["mode"]
+            selected["observation"] = patrol_result["observation"]
+            selected["shovel_preheat"] = shovel_preheat
+            return self._result("hunt", selected)
+
+        enemy_result = self.enemy.update(
+            ir, patrol_result["observation"], shovel,
+            now=now, healthy=healthy, allow_start=vision_available,
+        )
+        if enemy_result["owns_control"]:
+            selected = dict(enemy_result)
+            selected["observation"] = patrol_result["observation"]
+            selected["shovel_preheat"] = True
+            return self._result("enemy_push", selected)
         return self._result("patrol", patrol_result)
 
     def _result(self, mode, selected):
@@ -89,6 +153,8 @@ class RobotController:
             "patrol_state": self.patrol.state,
             "reentry_state": self.reentry.state,
             "shovel_state": self.shovel_guard.state,
+            "hunt_state": self.hunt.state,
+            "enemy_state": self.enemy.state,
             "shovel_preheat": bool(result.get("shovel_preheat", False)),
         })
         return result
@@ -137,11 +203,23 @@ def run(args):
         "ir_right_front", "ir_right_rear", "ir_valid", "analog_diff",
         "shovel_left", "shovel_right", "shovel_valid", "shovel_preheat",
         "mode", "state", "patrol_state", "reentry_state", "shovel_state",
+        "hunt_mode", "hunt_state", "hunt_target_type", "good_offset_x", "bad_offset_x",
+        "near_direction", "enemy_state", "enemy_source_direction",
+        "enemy_turn_direction", "enemy_slow", "enemy_confirmed",
+        "vision_sequence", "vision_status",
         "reason", "left_cmd", "right_cmd", "healthy",
     )
     start = time.monotonic()
     period = 1.0 / args.hz
+    vision = None
     try:
+        if YOLO_DIR not in sys.path:
+            sys.path.insert(0, YOLO_DIR)
+        from rpi_yolo_api import VisionClient
+        vision = VisionClient(command=(
+            "rpi-yolo", "--report-every", "0",
+            "--camera", VISION_CAMERA_DEVICE,
+        )).start()
         with open(args.log, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
@@ -151,9 +229,11 @@ def run(args):
                 ir_states = digi.read_states()
                 analog_raw = analog_sensor.read_raw()
                 shovel_raw = shovel_sensor.read_raw()
+                vision_raw = vision.get_raw(max_age_ms=VISION_MAX_AGE_MS)
                 healthy = hardware.healthy and not hardware.stale(PATROL_STALE_SECONDS)
                 result = robot.update(
                     gray_raw, ir_states, analog_raw, shovel_raw,
+                    vision=vision_raw,
                     now=loop_start, healthy=healthy,
                 )
                 hardware.move_cmd(result["left"], result["right"])
@@ -180,6 +260,23 @@ def run(args):
                     "patrol_state": result["patrol_state"],
                     "reentry_state": result["reentry_state"],
                     "shovel_state": result["shovel_state"],
+                    "hunt_mode": result.get("hunt_mode"),
+                    "hunt_state": result["hunt_state"],
+                    "hunt_target_type": result.get("target_type"),
+                    "good_offset_x": result.get("good_offset_x"),
+                    "bad_offset_x": result.get("bad_offset_x"),
+                    "near_direction": result.get("near_direction"),
+                    "enemy_state": result["enemy_state"],
+                    "enemy_source_direction": result.get("source_direction"),
+                    "enemy_turn_direction": result.get("turn_direction"),
+                    "enemy_slow": int(bool(result.get("slow", False))),
+                    "enemy_confirmed": int(bool(result.get("confirmed", False))),
+                    "vision_sequence": (
+                        vision_raw.get("sequence") if vision_raw else None
+                    ),
+                    "vision_status": (
+                        vision_raw.get("status") if vision_raw else "stale"
+                    ),
                     "reason": result["reason"],
                     "left_cmd": result["left"],
                     "right_cmd": result["right"],
@@ -197,6 +294,8 @@ def run(args):
     except KeyboardInterrupt:
         print()
     finally:
+        if vision is not None:
+            vision.close()
         hardware.close()
     print("\n生产运行日志：%s" % args.log)
 
