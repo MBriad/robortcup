@@ -56,6 +56,7 @@ class RobotController:
         self._strategy_owner = None
         self._vision_has_good = False
         self._vision_has_bad = False
+        self._enemy_bad_interrupt_count = 0
 
     def _reset_patrol(self, gray_raw, now, healthy):
         self.patrol = RingPatrolController()
@@ -117,6 +118,7 @@ class RobotController:
     def update(self, gray_raw, ir, analog, shovel=None, vision=None,
                now=None, healthy=True):
         now = time.monotonic() if now is None else float(now)
+        self._enemy_bad_interrupt_count = 0
         shovel = shovel or {"left": 0.0, "right": 0.0, "valid": False}
         vision_available = (
             isinstance(vision, dict)
@@ -219,6 +221,9 @@ class RobotController:
                 ir, patrol_result["observation"],
                 vision=probe_vision,
                 now=now, healthy=True, allow_start=False,
+            )
+            self._enemy_bad_interrupt_count = probe_result.get(
+                "bad_interrupt_count", 0,
             )
             if probe_result["state"] == "ENEMY_PUSH":
                 return self._run_push_guard(
@@ -336,6 +341,9 @@ class RobotController:
             "probe_state": self.probe.state,
             "probe_vision_count": self.probe.vision_count,
             "probe_vision_verdict": self.probe.vision_verdict,
+            "enemy_bad_interrupt_count": result.get(
+                "bad_interrupt_count", self._enemy_bad_interrupt_count,
+            ),
             "vision_has_good": self._vision_has_good,
             "vision_has_bad": self._vision_has_bad,
             "shovel_preheat": bool(result.get("shovel_preheat", False)),
@@ -392,7 +400,7 @@ def run(args):
         "good_confidence", "good_acquire_count", "good_miss_count", "good_locked",
         "near_direction", "probe_state", "probe_source_direction",
         "probe_turn_direction", "enemy_slow", "enemy_confirmed",
-        "probe_vision_count", "probe_vision_verdict",
+        "probe_vision_count", "probe_vision_verdict", "enemy_bad_interrupt_count",
         "vision_sequence", "vision_status", "vision_has_good", "vision_has_bad",
         "reason", "left_cmd", "right_cmd", "healthy",
     )
@@ -465,6 +473,7 @@ def run(args):
                     "enemy_confirmed": int(bool(result.get("confirmed", False))),
                     "probe_vision_count": result["probe_vision_count"],
                     "probe_vision_verdict": result["probe_vision_verdict"],
+                    "enemy_bad_interrupt_count": result["enemy_bad_interrupt_count"],
                     "vision_sequence": (
                         vision_raw.get("sequence") if vision_raw else None
                     ),

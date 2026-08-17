@@ -20,7 +20,7 @@ python3 dev/proximity_probe.py --label proximity_probe --seconds 0 --drive
 输入 `DRIVE` 后启用电机，按 `Ctrl+C` 停止；CSV 默认写入 `data/`。
 
 所有可调参数集中在 `config.py`：`PROBE_*` 配置候选转向、视觉等待和 dev 日志；
-`ENEMY_*` 只配置确认敌人后的推动/慢档、后路保护与冷却。
+`ENEMY_*` 只配置确认敌人后的推动/慢档、bad 打断帧数、后路保护与冷却。
 
 ## 仲裁规则
 

@@ -55,7 +55,7 @@ FIELDS = (
     "vision_has_good", "vision_has_bad",
     "probe_state", "probe_source_direction",
     "probe_turn_direction", "enemy_slow", "enemy_confirmed",
-    "probe_vision_count", "probe_vision_verdict",
+    "probe_vision_count", "probe_vision_verdict", "enemy_bad_interrupt_count",
     "shovel_state", "shovel_active",
     "ir_front", "ir_left_front", "ir_right_front", "ir_left_rear",
     "ir_right_rear", "ir_rear", "gray_front", "gray_rear", "gray_left",
@@ -216,6 +216,7 @@ def run(args):
                     "enemy_confirmed": int(bool(result.get("confirmed", False))),
                     "probe_vision_count": result.get("vision_count", 0),
                     "probe_vision_verdict": result.get("vision_verdict"),
+                    "enemy_bad_interrupt_count": result.get("bad_interrupt_count", 0),
                     "shovel_state": guard_result["state"],
                     "shovel_active": int(guard_result["state"] != "IDLE"),
                     **{"ir_" + name: int(bool(ir[name])) for name in (

@@ -275,23 +275,37 @@ class ProximityProbeControllerTest(unittest.TestCase):
         self.assertEqual("ENEMY_PUSH", result["state"])
         self.assertTrue(result["owns_control"])
 
-    def test_good_or_bad_can_veto_confirmed_push(self):
-        for target_type in ("good", "bad"):
-            with self.subTest(target_type=target_type):
-                controller = ProximityProbeController()
-                self.confirm_push(controller)
-                result = controller.update(
-                    ir(front=True), observation(),
-                    vision=vision(
-                        5,
-                        good=target_type == "good",
-                        bad=target_type == "bad",
-                    ),
-                    now=0.1,
-                )
-                self.assertFalse(result["owns_control"])
-                self.assertEqual("IDLE", result["state"])
-                self.assertEqual(target_type, result["vision_verdict"])
+    def test_good_immediately_vetoes_confirmed_push(self):
+        controller = ProximityProbeController()
+        self.confirm_push(controller)
+        result = controller.update(
+            ir(front=True), observation(),
+            vision=vision(5, good=True), now=0.1,
+        )
+        self.assertFalse(result["owns_control"])
+        self.assertEqual("IDLE", result["state"])
+        self.assertEqual("good", result["vision_verdict"])
+
+    def test_two_distinct_bad_frames_veto_confirmed_push(self):
+        controller = ProximityProbeController()
+        self.confirm_push(controller)
+        first = controller.update(
+            ir(front=True), observation(), vision=vision(5, bad=True), now=0.1,
+        )
+        repeated = controller.update(
+            ir(front=True), observation(), vision=vision(5, bad=True), now=0.12,
+        )
+        confirmed = controller.update(
+            ir(front=True), observation(), vision=vision(6, bad=True), now=0.14,
+        )
+        self.assertEqual("ENEMY_PUSH", first["state"])
+        self.assertEqual("ENEMY_PUSH", repeated["state"])
+        self.assertEqual(1, first["bad_interrupt_count"])
+        self.assertEqual(1, repeated["bad_interrupt_count"])
+        self.assertFalse(confirmed["owns_control"])
+        self.assertEqual("IDLE", confirmed["state"])
+        self.assertEqual(2, confirmed["bad_interrupt_count"])
+        self.assertEqual("bad_confirmed", confirmed["vision_verdict"])
 
     def test_finished_push_waits_for_front_target_to_leave(self):
         controller = ProximityProbeController()

@@ -5,6 +5,7 @@
 import time
 
 from config import (
+    ENEMY_BAD_INTERRUPT_FRAMES,
     ENEMY_COOLDOWN_SECONDS,
     ENEMY_PUSH_SPEED,
     ENEMY_REAR_ABORT_ZONE,
@@ -28,11 +29,14 @@ class ProximityProbeController:
             turn_plan=PROBE_TURN_PLAN,
             rear_first_turn=PROBE_REAR_FIRST_TURN,
             push_speed=ENEMY_PUSH_SPEED, slow_speed=ENEMY_SLOW_SPEED,
+            bad_interrupt_frames=ENEMY_BAD_INTERRUPT_FRAMES,
             vision_confirm_frames=PROBE_VISION_CONFIRM_FRAMES,
             vision_wait_timeout=PROBE_VISION_WAIT_TIMEOUT,
             ir_rearm_clear_frames=PROBE_IR_REARM_CLEAR_FRAMES):
         if int(vision_confirm_frames) < 1:
             raise ValueError("敌人视觉确认帧数必须为正")
+        if int(bad_interrupt_frames) < 1:
+            raise ValueError("bad 打断敌人推进帧数必须为正")
         if float(vision_wait_timeout) <= 0.0:
             raise ValueError("敌人视觉等待超时必须为正")
         if int(ir_rearm_clear_frames) < 1:
@@ -41,6 +45,7 @@ class ProximityProbeController:
         self.turn_plan = dict(turn_plan)
         self.push_speed = int(push_speed)
         self.slow_speed = int(slow_speed)
+        self.bad_interrupt_frames = int(bad_interrupt_frames)
         self.vision_confirm_frames = int(vision_confirm_frames)
         self.vision_wait_timeout = float(vision_wait_timeout)
         self.ir_rearm_clear_frames = int(ir_rearm_clear_frames)
@@ -53,6 +58,8 @@ class ProximityProbeController:
         self.confirmed = False
         self.slow = False
         self._slow_count = 0
+        self._bad_interrupt_count = 0
+        self._last_bad_interrupt_sequence = None
         self._state_started = 0.0
         self._side_armed = True
         self._front_armed = True
@@ -67,6 +74,10 @@ class ProximityProbeController:
     @property
     def active(self):
         return self.state != "IDLE"
+
+    @property
+    def bad_interrupt_count(self):
+        return self._bad_interrupt_count
 
     @staticmethod
     def _front_detected(ir):
@@ -103,6 +114,8 @@ class ProximityProbeController:
             self.confirmed = False
             self.slow = False
             self._slow_count = 0
+            self._bad_interrupt_count = 0
+            self._last_bad_interrupt_sequence = None
 
     def _start_turn(self, source, now):
         direction, angle = self._turn_for_source(source)
@@ -147,6 +160,8 @@ class ProximityProbeController:
         self.confirmed = False
         self.slow = False
         self._slow_count = 0
+        self._bad_interrupt_count = 0
+        self._last_bad_interrupt_sequence = None
         self.vision_count = 0
         self.vision_verdict = "idle"
         self._last_vision_sequence = None
@@ -197,6 +212,7 @@ class ProximityProbeController:
             "slow": self.slow,
             "vision_count": self.vision_count,
             "vision_verdict": self.vision_verdict,
+            "bad_interrupt_count": self.bad_interrupt_count,
         }
 
     def update(self, ir, observation, vision=None, now=None, healthy=True,
@@ -331,14 +347,32 @@ class ProximityProbeController:
         zone_valid = all(name in zone for name in ("front", "rear", "left", "right"))
 
         if self.state == "ENEMY_PUSH":
-            if vision_has_good or vision_has_bad:
-                verdict = "good" if vision_has_good else "bad"
+            if vision_has_good:
                 self.cancel()
                 self._front_armed = False
                 self._front_clear_count = 0
-                self.reason = "推动期间视觉识别为 %s，取消敌人攻击" % verdict
-                self.vision_verdict = verdict
+                self.reason = "推动期间视觉识别为 good，取消敌人攻击"
+                self.vision_verdict = "good"
                 return self._result(False)
+            if vision_has_bad:
+                if vision_sequence != self._last_bad_interrupt_sequence:
+                    self._bad_interrupt_count += 1
+                    self._last_bad_interrupt_sequence = vision_sequence
+                if self._bad_interrupt_count >= self.bad_interrupt_frames:
+                    bad_interrupt_count = self._bad_interrupt_count
+                    self.cancel()
+                    self._front_armed = False
+                    self._front_clear_count = 0
+                    self.reason = "推动期间连续 %d 帧识别为 bad，取消敌人攻击" % (
+                        self.bad_interrupt_frames,
+                    )
+                    self.vision_verdict = "bad_confirmed"
+                    result = self._result(False)
+                    result["bad_interrupt_count"] = bad_interrupt_count
+                    return result
+            else:
+                self._bad_interrupt_count = 0
+                self._last_bad_interrupt_sequence = None
             if not zone_valid:
                 self._abort(now, "灰度观测无效，中断推动")
                 return self._result()

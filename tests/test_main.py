@@ -611,23 +611,40 @@ class RobotControllerTest(unittest.TestCase):
         self.assertEqual("ENEMY_PUSH", result["probe_state"])
 
     def test_visual_target_preempts_confirmed_enemy_push(self):
-        for target_type, expected_state in (
-                ("good", "ARC_RIGHT"), ("bad", "BAD_CONFIRM")):
-            with self.subTest(target_type=target_type):
-                robot = RobotController()
-                self.warm_patrol(robot)
-                self.confirm_enemy_push(robot)
-                target = vision_detection(target_type, 0.25)
-                result = self.update(
-                    robot, dict(GRAY_CENTER_REFERENCE),
-                    ir=ir_states(front=True),
-                    shovel=SHOVEL_ON_STAGE,
-                    vision=vision_frame(10, target, target=target),
-                    now=0.4,
-                )
-                self.assertEqual("hunt", result["mode"])
-                self.assertEqual(expected_state, result["state"])
-                self.assertEqual("IDLE", result["probe_state"])
+        robot = RobotController()
+        self.warm_patrol(robot)
+        self.confirm_enemy_push(robot)
+        good = vision_detection("good", 0.25)
+        result = self.update(
+            robot, dict(GRAY_CENTER_REFERENCE),
+            ir=ir_states(front=True), shovel=SHOVEL_ON_STAGE,
+            vision=vision_frame(10, good, target=good), now=0.4,
+        )
+        self.assertEqual("hunt", result["mode"])
+        self.assertEqual("ARC_RIGHT", result["state"])
+        self.assertEqual("IDLE", result["probe_state"])
+
+    def test_two_bad_frames_preempt_confirmed_enemy_push(self):
+        robot = RobotController()
+        self.warm_patrol(robot)
+        self.confirm_enemy_push(robot)
+        bad = vision_detection("bad", 0.25)
+        first = self.update(
+            robot, dict(GRAY_CENTER_REFERENCE),
+            ir=ir_states(front=True), shovel=SHOVEL_ON_STAGE,
+            vision=vision_frame(10, bad, target=bad), now=0.4,
+        )
+        confirmed = self.update(
+            robot, dict(GRAY_CENTER_REFERENCE),
+            ir=ir_states(front=True), shovel=SHOVEL_ON_STAGE,
+            vision=vision_frame(11, bad, target=bad), now=0.42,
+        )
+        self.assertEqual("enemy_push", first["mode"])
+        self.assertEqual("ENEMY_PUSH", first["state"])
+        self.assertEqual("hunt", confirmed["mode"])
+        self.assertEqual("BAD_CONFIRM", confirmed["state"])
+        self.assertEqual("IDLE", confirmed["probe_state"])
+        self.assertEqual(2, confirmed["enemy_bad_interrupt_count"])
 
     def test_hunt_release_recreates_patrol(self):
         robot = RobotController()
