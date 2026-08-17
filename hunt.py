@@ -8,6 +8,13 @@ import time
 from config import (
     HUNT_BAD_CENTER_ZONE,
     HUNT_BAD_CONFIRM_FRAMES,
+    HUNT_GOOD_ACQUIRE_FRAMES,
+    HUNT_GOOD_CONFIRM_FRAMES,
+    HUNT_GOOD_HIGH_CONFIDENCE,
+    HUNT_GOOD_LOST_HOLD_FRAMES,
+    HUNT_GOOD_LOST_HOLD_SECONDS,
+    HUNT_GOOD_MIN_CONFIDENCE,
+    HUNT_GOOD_PUSH_SPEED,
     MOTOR_TURN_CALIBRATION,
 )
 from vision_tracker import VisionTracker
@@ -19,14 +26,38 @@ class HuntController:
     def __init__(
             self, tracker=None, center_zone=HUNT_BAD_CENTER_ZONE,
             confirm_frames=HUNT_BAD_CONFIRM_FRAMES,
+            good_min_confidence=HUNT_GOOD_MIN_CONFIDENCE,
+            good_high_confidence=HUNT_GOOD_HIGH_CONFIDENCE,
+            good_acquire_frames=HUNT_GOOD_ACQUIRE_FRAMES,
+            good_lost_hold_frames=HUNT_GOOD_LOST_HOLD_FRAMES,
+            good_lost_hold_seconds=HUNT_GOOD_LOST_HOLD_SECONDS,
+            good_confirm_frames=HUNT_GOOD_CONFIRM_FRAMES,
+            good_push_speed=HUNT_GOOD_PUSH_SPEED,
             turn_calibration=MOTOR_TURN_CALIBRATION):
         if not 0.0 <= center_zone < 1.0:
             raise ValueError("bad 居中区间无效")
         if int(confirm_frames) < 1:
             raise ValueError("bad 确认帧数必须为正")
+        if not 0.0 <= good_min_confidence <= good_high_confidence <= 1.0:
+            raise ValueError("good 置信度阈值顺序无效")
+        if int(good_acquire_frames) < 1:
+            raise ValueError("good 获取确认帧数必须为正")
+        if int(good_lost_hold_frames) < 0:
+            raise ValueError("good 丢帧保留帧数不能为负")
+        if float(good_lost_hold_seconds) <= 0.0:
+            raise ValueError("good 丢帧保留时间必须为正")
+        if int(good_confirm_frames) < 1:
+            raise ValueError("good 确认帧数必须为正")
         self.tracker = tracker or VisionTracker()
         self.center_zone = float(center_zone)
         self.confirm_frames = int(confirm_frames)
+        self.good_min_confidence = float(good_min_confidence)
+        self.good_high_confidence = float(good_high_confidence)
+        self.good_acquire_frames = int(good_acquire_frames)
+        self.good_lost_hold_frames = int(good_lost_hold_frames)
+        self.good_lost_hold_seconds = float(good_lost_hold_seconds)
+        self.good_confirm_frames = int(good_confirm_frames)
+        self.good_push_speed = int(good_push_speed)
         self.turn_calibration = turn_calibration
         self.state = "IDLE"
         self.command = (0, 0)
@@ -36,6 +67,16 @@ class HuntController:
         self._last_bad_sequence = None
         self._avoid_armed = True
         self._fallback_direction = "right"
+        self._good_confirm_count = 0
+        self._last_good_sequence = None
+        self._good_armed = True
+        self._good_acquire_count = 0
+        self._last_good_acquire_sequence = None
+        self._good_locked = False
+        self._good_miss_count = 0
+        self._last_good_miss_sequence = None
+        self._good_last_seen_at = None
+        self._last_good_seen_sequence = None
 
     @staticmethod
     def _bbox_area(detection):
@@ -72,6 +113,15 @@ class HuntController:
         return float(value)
 
     @staticmethod
+    def _confidence(target):
+        if target is None:
+            return None
+        value = target.get("confidence")
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+        return float(value)
+
+    @staticmethod
     def _near_direction(ir):
         if not isinstance(ir, dict) or not ir.get("valid"):
             return None
@@ -98,6 +148,11 @@ class HuntController:
         if isinstance(preferred, dict) and preferred not in detections:
             detections.append(preferred)
         for detection in detections:
+            if detection.get("type") == "good":
+                confidence = self._confidence(detection)
+                if (confidence is None
+                        or confidence < self.good_min_confidence):
+                    continue
             offset = self._offset(detection)
             if offset is None:
                 continue
@@ -111,6 +166,9 @@ class HuntController:
 
     def _result(self, owns_control, mode, state, reason, target=None,
                 good_offset=None, bad_offset=None, near_direction=None):
+        good_confidence = self._confidence(target) if (
+            target and target.get("type") == "good"
+        ) else None
         return {
             "left": self.command[0],
             "right": self.command[1],
@@ -124,6 +182,10 @@ class HuntController:
             "bad_offset_x": bad_offset,
             "near_direction": near_direction,
             "turn_direction": self.turn_direction,
+            "good_confidence": good_confidence,
+            "good_acquire_count": self._good_acquire_count,
+            "good_miss_count": self._good_miss_count,
+            "good_locked": self._good_locked,
         }
 
     def cancel(self):
@@ -134,7 +196,21 @@ class HuntController:
         self._near_bad_count = 0
         self._last_bad_sequence = None
         self._avoid_armed = True
+        self._good_confirm_count = 0
+        self._last_good_sequence = None
+        self._good_acquire_count = 0
+        self._last_good_acquire_sequence = None
+        self._good_locked = False
+        self._good_miss_count = 0
+        self._last_good_miss_sequence = None
+        self._good_last_seen_at = None
+        self._last_good_seen_sequence = None
         self.tracker.big_turn_direction = None
+
+    def finish_push(self):
+        """结束本次推动；当前 good 消失前禁止立即重新推动。"""
+        self.cancel()
+        self._good_armed = False
 
     def _choose_turn(self, bad_offset, good_offset, near_direction):
         if bad_offset < -self.center_zone:
@@ -189,21 +265,45 @@ class HuntController:
                 near_direction=near_direction,
             )
 
+        if self.state == "GOOD_PUSH":
+            speed = self.good_push_speed
+            self.command = (speed, speed)
+            return self._result(
+                True, "push_good", "GOOD_PUSH",
+                "good 已居中，持续前推直到铲子悬空保护触发",
+                near_direction=near_direction,
+            )
+
         self.command = (0, 0)
         vision_valid = (
             isinstance(raw, dict)
             and raw.get("sequence") is not None
-            and raw.get("status") != "error"
+            and raw.get("status") in ("target", "no_target")
         )
         good = self._select(raw, "good") if vision_valid else None
         bad = self._select(raw, "bad") if vision_valid else None
         near_target = self._near_target(raw, near_direction) if vision_valid else None
         if near_target is not None and near_target.get("type") == "good":
             good = near_target
+        raw_good = good
+        good_confidence = self._confidence(good)
+        if (good_confidence is None
+                or good_confidence < self.good_min_confidence):
+            good = None
+            good_confidence = None
         good_offset = self._offset(good)
         bad_offset = self._offset(bad)
         near_bad = near_target is not None and near_target.get("type") == "bad"
         if near_bad:
+            self._good_confirm_count = 0
+            self._last_good_sequence = None
+            self._good_acquire_count = 0
+            self._last_good_acquire_sequence = None
+            self._good_locked = False
+            self._good_miss_count = 0
+            self._last_good_miss_sequence = None
+            self._good_last_seen_at = None
+            self._last_good_seen_sequence = None
             bad = near_target
             bad_offset = self._offset(bad)
 
@@ -242,7 +342,59 @@ class HuntController:
                 bad, good_offset, bad_offset, near_direction,
             )
 
+        if not self._good_armed:
+            if vision_valid and raw_good is None:
+                self._good_armed = True
+            else:
+                self.state = "GOOD_REARM_WAIT"
+                self.command = (0, 0)
+                return self._result(
+                    False, "release", "GOOD_REARM_WAIT",
+                    "等待当前 good 消失后重新允许推动",
+                    good, good_offset, bad_offset, near_direction,
+                )
+
+        good_sequence = raw.get("sequence") if isinstance(raw, dict) else None
+        if good is not None:
+            if good_sequence != self._last_good_seen_sequence:
+                if (self._good_last_seen_at is not None
+                        and now - self._good_last_seen_at
+                        > self.good_lost_hold_seconds):
+                    self._good_locked = False
+                    self._good_acquire_count = 0
+                    self._last_good_acquire_sequence = None
+                    self._good_confirm_count = 0
+                    self._last_good_sequence = None
+                self._last_good_seen_sequence = good_sequence
+                self._good_last_seen_at = now
+            elif (self._good_last_seen_at is not None
+                  and now - self._good_last_seen_at
+                  > self.good_lost_hold_seconds):
+                good = None
+                good_confidence = None
+                good_offset = None
+
         if good is not None and good_offset is not None:
+            self._good_miss_count = 0
+            self._last_good_miss_sequence = None
+            if not self._good_locked:
+                sequence = raw.get("sequence")
+                if good_confidence >= self.good_high_confidence:
+                    self._good_locked = True
+                else:
+                    if sequence != self._last_good_acquire_sequence:
+                        self._good_acquire_count += 1
+                        self._last_good_acquire_sequence = sequence
+                    if self._good_acquire_count < self.good_acquire_frames:
+                        self.state = "GOOD_ACQUIRE"
+                        return self._result(
+                            True, "track_good", "GOOD_ACQUIRE",
+                            "中置信度 good 停车等待不同视觉帧确认",
+                            good, good_offset, bad_offset, near_direction,
+                        )
+                    self._good_locked = True
+                self._good_acquire_count = 0
+                self._last_good_acquire_sequence = None
             tracked = self.tracker.update({
                 "valid": True,
                 "reason": "ok",
@@ -251,11 +403,65 @@ class HuntController:
                 "offset_x": good_offset,
             })
             self.command = (tracked["left"], tracked["right"])
+            if tracked["state"] == "APPROACH":
+                sequence = raw.get("sequence")
+                if sequence != self._last_good_sequence:
+                    self._good_confirm_count += 1
+                    self._last_good_sequence = sequence
+                if self._good_confirm_count < self.good_confirm_frames:
+                    self.command = (0, 0)
+                    self.state = "GOOD_CONFIRM"
+                    return self._result(
+                        True, "track_good", "GOOD_CONFIRM",
+                        "good 已居中，等待不同视觉帧确认",
+                        good, good_offset, bad_offset, near_direction,
+                    )
+                speed = self.good_push_speed
+                self.command = (speed, speed)
+                self.state = "GOOD_PUSH"
+                return self._result(
+                    True, "push_good", "GOOD_PUSH",
+                    "good 已居中，锁定持续前推直到铲子保护触发",
+                    good, good_offset, bad_offset, near_direction,
+                )
+            self._good_confirm_count = 0
+            self._last_good_sequence = None
             self.state = tracked["state"]
             return self._result(
                 True, "track_good", tracked["state"], tracked["reason"],
                 good, good_offset, bad_offset, near_direction,
             )
+
+        self._good_confirm_count = 0
+        self._last_good_sequence = None
+
+        if self._good_locked:
+            sequence = raw.get("sequence") if isinstance(raw, dict) else None
+            if (sequence is not None
+                    and sequence != self._last_good_miss_sequence):
+                self._good_miss_count += 1
+                self._last_good_miss_sequence = sequence
+            elapsed = (
+                now - self._good_last_seen_at
+                if self._good_last_seen_at is not None else float("inf")
+            )
+            if (self._good_miss_count <= self.good_lost_hold_frames
+                    and elapsed <= self.good_lost_hold_seconds):
+                self.state = "GOOD_LOST_HOLD"
+                return self._result(
+                    True, "track_good", "GOOD_LOST_HOLD",
+                    "已锁定 good 临时丢帧，停车保留目标身份",
+                    good_offset=good_offset, bad_offset=bad_offset,
+                    near_direction=near_direction,
+                )
+            self._good_locked = False
+            self._good_miss_count = 0
+            self._last_good_miss_sequence = None
+            self._good_last_seen_at = None
+            self._last_good_seen_sequence = None
+
+        self._good_acquire_count = 0
+        self._last_good_acquire_sequence = None
 
         self.tracker.big_turn_direction = None
         if near_direction is not None:

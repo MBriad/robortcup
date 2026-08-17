@@ -31,7 +31,6 @@ class RingPatrolController:
         self._near_count = 0
         self._early_front_count = 0
         self._diagonal_count = 0
-        self._turn_sign = 1.0
         self._last_turn_sign = 1.0
         self.turn_angle = 0.0
         self.turn_direction = ""
@@ -115,19 +114,18 @@ class RingPatrolController:
             >= cfg.PATROL_DIAGONAL_TURN_DELTA
         )
 
-    def _start_edge_turn(self, observation, now, reason, reuse_direction=False):
+    def _start_edge_turn(self, observation, now, reason, reuse_direction=False,
+                         forced_sign=None):
         linear_signal, turn_signal = self._risk_signals(observation)
-        shallow = observation["zone_score"] >= cfg.PATROL_EDGE_SHALLOW_ZONE
-        if reuse_direction:
+        if forced_sign is not None:
+            sign = float(forced_sign)
+        elif reuse_direction:
             sign = self._last_turn_sign
-        elif shallow and abs(turn_signal) <= cfg.PATROL_ALTERNATE_TURN_SIGNAL:
-            sign = self._turn_sign
-            self._turn_sign *= -1.0
-        elif abs(turn_signal) > 0.05:
+        elif abs(turn_signal) > cfg.PATROL_TURN_SIGNAL_EPSILON:
+            # zone 越小越接近暗外圈，始终转离风险更高的一侧。
             sign = -1.0 if turn_signal > 0.0 else 1.0
         else:
-            sign = self._turn_sign
-            self._turn_sign *= -1.0
+            sign = self._last_turn_sign
 
         if abs(linear_signal) >= abs(turn_signal):
             self.risk_sensor = "rear" if linear_signal > 0.0 else "front"
@@ -151,6 +149,14 @@ class RingPatrolController:
         elif "rear" in hits and "front" not in hits:
             command = (cfg.PATROL_WHITE_ESCAPE_SPEED,) * 2
             self._enter("WHITE_ESCAPE", now, command, "后方白边，先前进")
+        elif "left" in hits and "right" not in hits:
+            self._start_edge_turn(
+                observation, now, "左侧白边，向右转离边缘", forced_sign=1.0,
+            )
+        elif "right" in hits and "left" not in hits:
+            self._start_edge_turn(
+                observation, now, "右侧白边，向左转离边缘", forced_sign=-1.0,
+            )
         else:
             self._start_edge_turn(observation, now, "侧向或多方向白边，直接转 135 度")
 
@@ -158,9 +164,7 @@ class RingPatrolController:
     def _white_edge_risk(observation):
         """白边命中且已进入暗外圈时才判为白边事件。"""
         hits = set(observation.get("white_hits") or ())
-        return bool(hits & {"front", "rear"}) and bool(
-            observation.get("near_edge")
-        )
+        return bool(hits) and bool(observation.get("near_edge"))
 
     def _start_recover(self, observation, now, forward, reason):
         speed = cfg.PATROL_RECOVER_SPEED if forward else -cfg.PATROL_RECOVER_SPEED
@@ -233,7 +237,6 @@ class RingPatrolController:
             not in (
                 "WHITE_ESCAPE",
                 "EDGE_TURN",
-                "RECOVER_FORWARD",
                 "RECOVER_BACKWARD",
             )
         ):
@@ -246,7 +249,6 @@ class RingPatrolController:
                 "WHITE_ESCAPE",
                 "EDGE_AVOID",
                 "EDGE_TURN",
-                "RECOVER_FORWARD",
                 "RECOVER_BACKWARD",
             )
         ):
@@ -263,7 +265,6 @@ class RingPatrolController:
                 "WHITE_ESCAPE",
                 "EDGE_AVOID",
                 "EDGE_TURN",
-                "RECOVER_FORWARD",
                 "RECOVER_BACKWARD",
             )
         ):

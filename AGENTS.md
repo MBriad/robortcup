@@ -22,8 +22,8 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 - `uptech.py` — vendor Raspberry Pi hardware library (`UpTech`; ctypes to `libuptech.so` + pigpio): CDS servo speed/mode, 10-ch ADC read, IO input mask, LCD. **Do not edit.**
 - `up_controller.py` — driver wrapper: `move_cmd(left, right)` (CDS id 7 = left wheel, id 8 = right wheel negated; software `motor_invert`/`motor_swap` fixes), background poll thread filling `adc_data` (10 ch) / `io_data` (8-bit mask), `stale()`/`healthy` health flags, `close()` safe shutdown (stop motors → stop thread → close hardware). Raises `RuntimeError` without `uptech` (PC dev uses stubs). **Do not edit.**
 - `main.py` — production coordinator and the only match entry: owns one background `VisionClient` and arbitrates reentry/edge/shovel safety before hunt, enemy push, and patrol; emits one final motor command per loop.
-- `ring_patrol.py` / `reentry.py` / `hunt.py` / `enemy_push.py` — pure strategy state machines; receive externally injected sensor/vision data and return motor commands; no hardware ownership or CLI.
-- `dev/ring_patrol.py` / `dev/reentry.py` / `dev/hunt.py` / `dev/enemy_push.py` — independent real-hardware strategy tests and CSV logging; reentry runner also supports PC CSV replay.
+- `ring_patrol.py` / `reentry.py` / `hunt.py` / `proximity_probe.py` — pure strategy state machines; receive externally injected sensor/vision data and return motor commands; no hardware ownership or CLI.
+- `dev/ring_patrol.py` / `dev/reentry.py` / `dev/hunt.py` / `dev/proximity_probe.py` — independent real-hardware strategy tests and CSV logging; reentry runner also supports PC CSV replay.
 - `dev/gray_tool.py` / `dev/ir_tool.py` / `dev/digi_ir_tool.py` — sensor scan and CSV collection tools; digital IR collection saves both raw IO bits and mapped states.
 - `dev/calibrate_gray.py` — offline gray-model calibration from files already stored under `data/`.
 - `tests/test_<module>.py` — PC automated unit and replay tests, run through `unittest discover`.
@@ -39,7 +39,7 @@ Raspberry Pi robot controller (RoboCup ring match): differential chassis (2x CDS
 - `python3 dev/ring_patrol.py` — patrol-only real-hardware test and CSV log.
 - `python3 dev/reentry.py [--force-trigger]` — reentry-only real-hardware test and CSV log.
 - `python3 dev/reentry.py --replay data/<file>.csv` — PC gray CSV replay.
-- `python3 dev/enemy_push.py --seconds 0 --drive` — enemy-only search/push hardware test; YOLO runs only for background CSV logging and does not control motors.
+- `python3 dev/proximity_probe.py --seconds 0 --drive` — proximity-candidate probe/confirmation hardware test; YOLO runs only for background CSV logging and does not control motors.
 - `python3 dev/gray_tool.py scan|collect ...` — gray scan or CSV collection.
 - `python3 dev/ir_tool.py scan|collect ...` — analog IR scan or CSV collection.
 - `python3 dev/digi_ir_tool.py scan|collect ...` — digital IR scan or CSV collection.

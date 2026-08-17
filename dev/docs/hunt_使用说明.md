@@ -9,7 +9,13 @@
 
 ## 行为
 
-- 任意距离的 good 都会追踪；红外近距确认是 good 时仍继续追踪。
+- good 只由视觉分类，前头红外不负责确认 good；远近目标使用同一规则。
+- 置信度不低于 `HUNT_GOOD_HIGH_CONFIDENCE` 时，单帧中断普通巡台并开始追踪。
+- 中等置信度 good 先进入 `GOOD_ACQUIRE` 停车，收到第二个不同 YOLO 帧后追踪。
+- 低于 `HUNT_GOOD_MIN_CONFIDENCE` 的 good 不打断巡台。
+- 已锁定 good 临时丢失时进入 `GOOD_LOST_HOLD` 停车，最多保留两个新视觉帧；
+  前头红外即使亮起也不会立即把目标交给敌人模块。
+- 近距 bad 会立即取消尚未提交的 good 锁定，并按 bad 确认流程处理。
 - 只有远处 bad 时忽略，不抢占巡台。
 - 红外近距目标经两个不同 YOLO 帧确认是 bad 后，锁定方向原地转 90 度。
 - bad 接近画面中心时优先朝可见 good 的方向转。
@@ -46,6 +52,33 @@ python3 dev/hunt.py collect --label hunt_scene --seconds 0
 ```bash
 python3 dev/hunt.py collect --label hunt_drive --seconds 20 --drive
 ```
+
+## good 推块与铲子保护
+
+- 普通巡台是默认任务；可靠 good 会中断 `CRUISE/MEDIUM_CRUISE` 并接管电机。
+- 巡台边缘逃生和掉台回归不会被尚未提交的 good 中断。
+- good 未居中时继续使用视觉大转/小转对准。
+- good 连续两个不同 YOLO 帧进入中心死区后切换为 `GOOD_PUSH`，即使目标离开画面也持续直推。
+- 视觉对准和转向阶段不启用铲子保护，只有 `GOOD_PUSH` 已提交后才启用。
+- 前/侧灰度边缘不结束 `GOOD_PUSH`；铲子双路悬空才是正常停线。
+- 铲子悬空后立即停车，确认后倒车收回；推动期间忽略灰度掉台触发，硬件整体失效仍会停车。
+- 倒车收回后必须等待当前 good 消失，才允许重新推动。
+- CSV 的 `shovel_left/right/state/active/hang` 用于核对保护触发时序。
+
+## good 参数与日志
+
+参数集中在 `config.py`：
+
+- `HUNT_GOOD_MIN_CONFIDENCE = 0.55`：低于此值忽略。
+- `HUNT_GOOD_HIGH_CONFIDENCE = 0.80`：达到此值单帧快速接管。
+- `HUNT_GOOD_ACQUIRE_FRAMES = 2`：中置信度需要的不同视觉帧数。
+- `HUNT_GOOD_LOST_HOLD_FRAMES = 2`：锁定后允许丢失的新帧数。
+- `HUNT_GOOD_LOST_HOLD_SECONDS = 0.35`：没有新视觉序号时的最长保留时间。
+- `HUNT_GOOD_CONFIRM_FRAMES = 2`：居中后提交 `GOOD_PUSH` 的确认帧数。
+
+分析 CSV 时查看 `confidence`、`selected_target`、`hunt_state`、
+`good_acquire_count`、`good_miss_count` 和 `good_locked`。同一个 `sequence` 在
+50 Hz 电机循环中会出现多次，但不会重复增加确认或丢帧计数。
 
 按提示输入大写 `DRIVE` 后，程序才会通过 `UpController.move_cmd(left, right)`
 驱动电机。按 `Ctrl+C` 会进入 `finally` 并调用 `UpController.close()` 停车。

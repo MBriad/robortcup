@@ -21,12 +21,16 @@ from config import (  # noqa: E402
     DIGI_IR_BITS,
     HUNT_COLLECT_LOG_DIR,
     HUNT_COLLECT_SECONDS,
+    SHOVEL_ADC_MAX,
+    SHOVEL_IR_CHANNELS,
     VISION_CAMERA_DEVICE,
     VISION_LOOP_HZ,
     VISION_MAX_AGE_MS,
 )
 from digi_ir import DigiIR  # noqa: E402
 from hunt import HuntController  # noqa: E402
+from ir import IrSensor  # noqa: E402
+from shovel_guard import ShovelGuard  # noqa: E402
 
 
 ADC_FIELDS = tuple("adc%d" % index for index in range(10))
@@ -41,6 +45,9 @@ FIELDS = (
     "center_y", "offset_x", "offset_y", "model_distance_cm", "sensor_valid",
     "sensor_error", "io_mask", "hunt_mode", "hunt_state", "hunt_reason",
     "hunt_owns_control", "near_direction", "good_offset_x", "bad_offset_x",
+    "good_confidence", "good_acquire_count", "good_miss_count", "good_locked",
+    "shovel_left", "shovel_right", "shovel_state", "shovel_active",
+    "shovel_hang",
     "left_cmd", "right_cmd", "motor_enabled",
 ) + ADC_FIELDS + IO_FIELDS
 
@@ -176,6 +183,15 @@ def rows_for_result(raw, sensors, label, measured_distance_cm, elapsed,
         "near_direction": hunt_result.get("near_direction"),
         "good_offset_x": hunt_result.get("good_offset_x"),
         "bad_offset_x": hunt_result.get("bad_offset_x"),
+        "good_confidence": hunt_result.get("good_confidence"),
+        "good_acquire_count": hunt_result.get("good_acquire_count"),
+        "good_miss_count": hunt_result.get("good_miss_count"),
+        "good_locked": int(bool(hunt_result.get("good_locked", False))),
+        "shovel_left": hunt_result.get("shovel_left"),
+        "shovel_right": hunt_result.get("shovel_right"),
+        "shovel_state": hunt_result.get("shovel_state"),
+        "shovel_active": int(bool(hunt_result.get("shovel_active", False))),
+        "shovel_hang": int(bool(hunt_result.get("shovel_hang", False))),
         "left_cmd": hunt_result.get("left", 0),
         "right_cmd": hunt_result.get("right", 0),
         "motor_enabled": int(bool(motor_enabled)),
@@ -257,6 +273,11 @@ def collect(args):
 
     hunt = HuntController()
     digi = DigiIR(bits=DIGI_IR_BITS, active_level=DIGI_IR_ACTIVE_LEVEL)
+    shovel_sensor = IrSensor(
+        channels=SHOVEL_IR_CHANNELS,
+        adc_max=SHOVEL_ADC_MAX,
+    )
+    shovel_guard = ShovelGuard()
     start = time.monotonic()
     last_log_key = object()
     period = 1.0 / args.hz
@@ -290,6 +311,38 @@ def collect(args):
                         raw, ir_states, now=loop_started,
                         healthy=bool(sensors["valid"]),
                     )
+                    if sensors["valid"]:
+                        shovel_raw = shovel_sensor.read_raw(sensors["adc"])
+                    else:
+                        shovel_raw = {"left": 0.0, "right": 0.0, "valid": False}
+                    shovel_active = (
+                        result.get("state") == "GOOD_PUSH"
+                        or shovel_guard.state != "IDLE"
+                    )
+                    guard_result = shovel_guard.update(
+                        shovel_raw, active=shovel_active,
+                        now=loop_started, healthy=bool(sensors["valid"]),
+                    )
+                    result = dict(result)
+                    result.update({
+                        "shovel_left": shovel_raw["left"],
+                        "shovel_right": shovel_raw["right"],
+                        "shovel_state": guard_result["state"],
+                        "shovel_active": shovel_active,
+                        "shovel_hang": guard_result["hang"],
+                    })
+                    if guard_result["state"] != "IDLE":
+                        if (guard_result["state"] in ("REVERSE", "SAFE_STOP")
+                                and result.get("state") == "GOOD_PUSH"):
+                            hunt.finish_push()
+                        result.update({
+                            "left": guard_result["left"],
+                            "right": guard_result["right"],
+                            "owns_control": True,
+                            "mode": "shovel_guard",
+                            "state": guard_result["state"],
+                            "reason": guard_result["reason"],
+                        })
                     if controller is not None:
                         controller.move_cmd(result["left"], result["right"])
                     log_key = (

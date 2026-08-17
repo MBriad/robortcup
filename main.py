@@ -26,7 +26,7 @@ from config import (
     VISION_MAX_AGE_MS,
 )
 from digi_ir import DigiIR
-from enemy_push import EnemyPushController
+from proximity_probe import ProximityProbeController
 from gray import GrayRiskModel, GraySensor
 from hunt import HuntController
 from ir import IrSensor
@@ -48,102 +48,281 @@ class RobotController:
         self.reentry = ReentryController()
         self.shovel_guard = ShovelGuard()
         self.hunt = HuntController()
-        self.enemy = EnemyPushController(guard=self.shovel_guard)
+        self.probe = ProximityProbeController()
         self._reentry_active = False
         self._shovel_guard_active = False
+        self._shovel_guard_owner = None
+        self._shovel_push_finished = False
+        self._strategy_owner = None
+        self._vision_has_good = False
+        self._vision_has_bad = False
+
+    def _reset_patrol(self, gray_raw, now, healthy):
+        self.patrol = RingPatrolController()
+        return self.patrol.update(gray_raw, now=now, healthy=healthy)
+
+    def _finish_push(self, owner):
+        if owner == "hunt":
+            self.hunt.finish_push()
+        else:
+            self.probe.finish_push()
+
+    def _run_push_guard(
+            self, owner, strategy_result, shovel, patrol_result,
+            gray_raw, now, healthy):
+        if not shovel.get("valid", False):
+            self._finish_push(owner)
+            self.shovel_guard = ShovelGuard()
+            self._shovel_guard_active = False
+            self._shovel_guard_owner = None
+            self._shovel_push_finished = False
+            self.reentry = ReentryController()
+            self._strategy_owner = None
+            patrol_result = self._reset_patrol(gray_raw, now, healthy)
+            selected = dict(patrol_result)
+            selected["reason"] = "推动期间铲子数据无效，取消推动并切回巡台"
+            return self._result("patrol", selected)
+
+        guard_result = self.shovel_guard.update(
+            shovel, active=True, now=now, healthy=healthy
+        )
+        if guard_result["state"] != "IDLE":
+            self._shovel_guard_active = True
+            self._shovel_guard_owner = owner
+            self._shovel_push_finished = False
+            self._strategy_owner = owner
+            if guard_result["state"] in ("REVERSE", "SAFE_STOP"):
+                self._finish_push(owner)
+                self._shovel_push_finished = True
+                self._strategy_owner = None
+            selected = dict(guard_result)
+            selected["observation"] = patrol_result["observation"]
+            selected["shovel_preheat"] = bool(
+                patrol_result.get("shovel_preheat", False)
+            )
+            selected["shovel_active"] = True
+            return self._result("shovel_guard", selected)
+
+        self._strategy_owner = owner
+        selected = dict(strategy_result)
+        selected["observation"] = patrol_result["observation"]
+        selected["shovel_preheat"] = bool(
+            patrol_result.get("shovel_preheat", False)
+        )
+        selected["shovel_active"] = True
+        if owner == "hunt":
+            selected["hunt_mode"] = strategy_result["mode"]
+        return self._result("hunt" if owner == "hunt" else "enemy_push", selected)
 
     def update(self, gray_raw, ir, analog, shovel=None, vision=None,
                now=None, healthy=True):
         now = time.monotonic() if now is None else float(now)
+        shovel = shovel or {"left": 0.0, "right": 0.0, "valid": False}
         vision_available = (
             isinstance(vision, dict)
             and vision.get("sequence") is not None
-            and vision.get("status") != "error"
+            and vision.get("status") in ("target", "no_target")
         )
-        reentry_result = self.reentry.update(
-            gray_raw, ir, analog, now=now, healthy=healthy
+        vision_detections = (
+            list(vision.get("detections") or [])
+            + ([vision["target"]] if isinstance(vision.get("target"), dict) else [])
+            if isinstance(vision, dict) else []
         )
+        vision_good = vision_available and any(
+            detection.get("type") == "good"
+            for detection in vision_detections
+        )
+        vision_bad = vision_available and any(
+            detection.get("type") == "bad"
+            for detection in vision_detections
+        )
+        self._vision_has_good = vision_good
+        self._vision_has_bad = vision_bad
+        probe_vision = {
+            "sequence": vision.get("sequence") if isinstance(vision, dict) else None,
+            "status": vision.get("status") if isinstance(vision, dict) else "stale",
+            "has_good": vision_good,
+            "has_bad": vision_bad,
+        }
+        patrol_result = self.patrol.update(gray_raw, now=now, healthy=healthy)
 
-        if reentry_result["state"] != "WAIT":
+        if not healthy:
+            reentry_result = self.reentry.update(
+                gray_raw, ir, analog, now=now, healthy=False
+            )
             self.hunt.cancel()
-            self.enemy.cancel()
+            self.probe.cancel()
             self._reentry_active = True
             self.shovel_guard = ShovelGuard()
-            self.enemy.guard = self.shovel_guard
             self._shovel_guard_active = False
+            self._shovel_guard_owner = None
+            self._shovel_push_finished = False
+            self._strategy_owner = None
+            return self._result("reentry", reentry_result)
+
+        if self._shovel_guard_active:
+            guard_owner = self._shovel_guard_owner
+            guard_result = self.shovel_guard.update(
+                shovel, active=True, now=now, healthy=True
+            )
+            if guard_result["state"] != "IDLE":
+                if (guard_result["state"] in ("REVERSE", "SAFE_STOP")
+                        and not self._shovel_push_finished):
+                    self._finish_push(guard_owner)
+                    self._shovel_push_finished = True
+                    self._strategy_owner = None
+                selected = dict(guard_result)
+                selected["observation"] = patrol_result["observation"]
+                selected["shovel_preheat"] = bool(
+                    patrol_result.get("shovel_preheat", False)
+                )
+                selected["shovel_active"] = True
+                return self._result("shovel_guard", selected)
+            push_finished = self._shovel_push_finished
+            self.shovel_guard = ShovelGuard()
+            self._shovel_guard_active = False
+            self._shovel_guard_owner = None
+            self._shovel_push_finished = False
+            if not push_finished and guard_owner == "hunt" and self.hunt.state == "GOOD_PUSH":
+                hunt_result = self.hunt.update(
+                    vision, ir, now=now, healthy=True
+                )
+                return self._run_push_guard(
+                    "hunt", hunt_result, shovel, patrol_result,
+                    gray_raw, now, healthy,
+                )
+            if (not push_finished and guard_owner == "enemy"
+                    and self.probe.state == "ENEMY_PUSH"):
+                probe_result = self.probe.update(
+                    ir, patrol_result["observation"],
+                    vision=probe_vision,
+                    now=now, healthy=True, allow_start=False,
+                )
+                return self._run_push_guard(
+                    "enemy", probe_result, shovel, patrol_result,
+                    gray_raw, now, healthy,
+                )
+            self.reentry = ReentryController()
+            self._strategy_owner = None
+            patrol_result = self._reset_patrol(gray_raw, now, healthy)
+            return self._result("patrol", patrol_result)
+
+        if self.hunt.state == "GOOD_PUSH":
+            hunt_result = self.hunt.update(vision, ir, now=now, healthy=True)
+            return self._run_push_guard(
+                "hunt", hunt_result, shovel, patrol_result,
+                gray_raw, now, healthy,
+            )
+
+        if self.probe.state == "ENEMY_PUSH":
+            probe_result = self.probe.update(
+                ir, patrol_result["observation"],
+                vision=probe_vision,
+                now=now, healthy=True, allow_start=False,
+            )
+            if probe_result["state"] == "ENEMY_PUSH":
+                return self._run_push_guard(
+                    "enemy", probe_result, shovel, patrol_result,
+                    gray_raw, now, healthy,
+                )
+            self.shovel_guard = ShovelGuard()
+            self._strategy_owner = "probe"
+            selected = dict(probe_result)
+            selected["observation"] = patrol_result["observation"]
+            selected["shovel_preheat"] = bool(
+                patrol_result.get("shovel_preheat", False)
+            )
+            if probe_result["owns_control"]:
+                return self._result("proximity_probe", selected)
+
+        reentry_result = self.reentry.update(
+            gray_raw, ir, analog, now=now, healthy=True
+        )
+        if reentry_result["state"] != "WAIT":
+            self.hunt.cancel()
+            self.probe.cancel()
+            self._reentry_active = True
+            self.shovel_guard = ShovelGuard()
+            self._strategy_owner = None
             return self._result("reentry", reentry_result)
 
         if self._reentry_active:
-            # 回台期间巡台计时已失效，重新预热灰度模型后再恢复运动。
-            self.patrol = RingPatrolController()
+            patrol_result = self._reset_patrol(gray_raw, now, healthy)
             self._reentry_active = False
 
-        patrol_result = self.patrol.update(gray_raw, now=now, healthy=healthy)
-        shovel = shovel or {"left": 0.0, "right": 0.0, "valid": False}
-        shovel_preheat = bool(patrol_result["shovel_preheat"])
-
-        if self.enemy.active:
-            if patrol_result["state"] not in HUNT_ALLOWED_PATROL_STATES:
-                self.enemy.cancel()
+        if self.probe.active:
+            if (self.probe.state == "PROBE_TURN"
+                    and patrol_result["state"] not in HUNT_ALLOWED_PATROL_STATES):
+                self.probe.cancel()
                 self.hunt.cancel()
+                self._strategy_owner = None
                 return self._result("patrol", patrol_result)
             self.hunt.cancel()
-            enemy_result = self.enemy.update(
-                ir, patrol_result["observation"], shovel,
-                now=now, healthy=healthy, allow_start=False,
+            probe_result = self.probe.update(
+                ir, patrol_result["observation"],
+                vision=probe_vision,
+                now=now, healthy=True, allow_start=False,
             )
-            if enemy_result["owns_control"]:
-                selected = dict(enemy_result)
+            if probe_result["state"] == "ENEMY_PUSH":
+                return self._run_push_guard(
+                    "enemy", probe_result, shovel, patrol_result,
+                    gray_raw, now, healthy,
+                )
+            if probe_result["owns_control"]:
+                self._strategy_owner = "probe"
+                selected = dict(probe_result)
                 selected["observation"] = patrol_result["observation"]
-                selected["shovel_preheat"] = True
-                return self._result("enemy_push", selected)
-            return self._result("patrol", patrol_result)
+                selected["shovel_preheat"] = bool(
+                    patrol_result.get("shovel_preheat", False)
+                )
+                return self._result("proximity_probe", selected)
 
-        shovel_result = self.shovel_guard.update(
-            shovel,
-            active=shovel_preheat or self.shovel_guard.state != "IDLE",
-            now=now,
-            healthy=healthy,
-        )
-        if shovel_result["state"] != "IDLE":
-            self.hunt.cancel()
-            self.enemy.cancel()
-            self._shovel_guard_active = True
-            selected = dict(shovel_result)
-            selected["observation"] = patrol_result["observation"]
-            selected["shovel_preheat"] = shovel_preheat
-            return self._result("shovel_guard", selected)
-
-        if self._shovel_guard_active:
-            self.patrol = RingPatrolController()
-            self._shovel_guard_active = False
-            patrol_result = self.patrol.update(
-                gray_raw, now=now, healthy=healthy
-            )
         if patrol_result["state"] not in HUNT_ALLOWED_PATROL_STATES:
             self.hunt.cancel()
-            self.enemy.cancel()
+            self.probe.cancel()
+            self._strategy_owner = None
             return self._result("patrol", patrol_result)
 
         hunt_result = self.hunt.update(
             vision, ir, now=now, healthy=healthy
         )
         if hunt_result["owns_control"]:
+            if hunt_result["state"] == "GOOD_PUSH":
+                return self._run_push_guard(
+                    "hunt", hunt_result, shovel, patrol_result,
+                    gray_raw, now, healthy,
+                )
+            self._strategy_owner = "hunt"
             selected = dict(hunt_result)
             selected["hunt_mode"] = hunt_result["mode"]
             selected["observation"] = patrol_result["observation"]
-            selected["shovel_preheat"] = shovel_preheat
+            selected["shovel_preheat"] = bool(
+                patrol_result.get("shovel_preheat", False)
+            )
             return self._result("hunt", selected)
 
-        enemy_result = self.enemy.update(
-            ir, patrol_result["observation"], shovel,
-            now=now, healthy=healthy, allow_start=vision_available,
+        probe_result = self.probe.update(
+            ir, patrol_result["observation"],
+            vision=probe_vision,
+            now=now, healthy=True,
+            allow_start=not vision_good,
         )
-        if enemy_result["owns_control"]:
-            selected = dict(enemy_result)
+        if probe_result["state"] == "ENEMY_PUSH":
+            return self._run_push_guard(
+                "enemy", probe_result, shovel, patrol_result,
+                gray_raw, now, healthy,
+            )
+        if probe_result["owns_control"]:
+            self._strategy_owner = "probe"
+            selected = dict(probe_result)
             selected["observation"] = patrol_result["observation"]
-            selected["shovel_preheat"] = True
-            return self._result("enemy_push", selected)
+            selected["shovel_preheat"] = bool(
+                patrol_result.get("shovel_preheat", False)
+            )
+            return self._result("proximity_probe", selected)
+        if self._strategy_owner is not None:
+            self._strategy_owner = None
+            patrol_result = self._reset_patrol(gray_raw, now, healthy)
         return self._result("patrol", patrol_result)
 
     def _result(self, mode, selected):
@@ -154,8 +333,13 @@ class RobotController:
             "reentry_state": self.reentry.state,
             "shovel_state": self.shovel_guard.state,
             "hunt_state": self.hunt.state,
-            "enemy_state": self.enemy.state,
+            "probe_state": self.probe.state,
+            "probe_vision_count": self.probe.vision_count,
+            "probe_vision_verdict": self.probe.vision_verdict,
+            "vision_has_good": self._vision_has_good,
+            "vision_has_bad": self._vision_has_bad,
             "shovel_preheat": bool(result.get("shovel_preheat", False)),
+            "shovel_active": bool(result.get("shovel_active", False)),
         })
         return result
 
@@ -202,11 +386,14 @@ def run(args):
         "ir_front", "ir_rear", "ir_left_front", "ir_left_rear",
         "ir_right_front", "ir_right_rear", "ir_valid", "analog_diff",
         "shovel_left", "shovel_right", "shovel_valid", "shovel_preheat",
+        "shovel_active",
         "mode", "state", "patrol_state", "reentry_state", "shovel_state",
         "hunt_mode", "hunt_state", "hunt_target_type", "good_offset_x", "bad_offset_x",
-        "near_direction", "enemy_state", "enemy_source_direction",
-        "enemy_turn_direction", "enemy_slow", "enemy_confirmed",
-        "vision_sequence", "vision_status",
+        "good_confidence", "good_acquire_count", "good_miss_count", "good_locked",
+        "near_direction", "probe_state", "probe_source_direction",
+        "probe_turn_direction", "enemy_slow", "enemy_confirmed",
+        "probe_vision_count", "probe_vision_verdict",
+        "vision_sequence", "vision_status", "vision_has_good", "vision_has_bad",
         "reason", "left_cmd", "right_cmd", "healthy",
     )
     start = time.monotonic()
@@ -255,6 +442,7 @@ def run(args):
                     "shovel_right": shovel_raw["right"],
                     "shovel_valid": int(shovel_raw["valid"]),
                     "shovel_preheat": int(result.get("shovel_preheat", False)),
+                    "shovel_active": int(result.get("shovel_active", False)),
                     "mode": result["mode"],
                     "state": result["state"],
                     "patrol_state": result["patrol_state"],
@@ -265,18 +453,26 @@ def run(args):
                     "hunt_target_type": result.get("target_type"),
                     "good_offset_x": result.get("good_offset_x"),
                     "bad_offset_x": result.get("bad_offset_x"),
+                    "good_confidence": result.get("good_confidence"),
+                    "good_acquire_count": result.get("good_acquire_count"),
+                    "good_miss_count": result.get("good_miss_count"),
+                    "good_locked": int(bool(result.get("good_locked", False))),
                     "near_direction": result.get("near_direction"),
-                    "enemy_state": result["enemy_state"],
-                    "enemy_source_direction": result.get("source_direction"),
-                    "enemy_turn_direction": result.get("turn_direction"),
+                    "probe_state": result["probe_state"],
+                    "probe_source_direction": result.get("source_direction"),
+                    "probe_turn_direction": result.get("turn_direction"),
                     "enemy_slow": int(bool(result.get("slow", False))),
                     "enemy_confirmed": int(bool(result.get("confirmed", False))),
+                    "probe_vision_count": result["probe_vision_count"],
+                    "probe_vision_verdict": result["probe_vision_verdict"],
                     "vision_sequence": (
                         vision_raw.get("sequence") if vision_raw else None
                     ),
                     "vision_status": (
                         vision_raw.get("status") if vision_raw else "stale"
                     ),
+                    "vision_has_good": int(result["vision_has_good"]),
+                    "vision_has_bad": int(result["vision_has_bad"]),
                     "reason": result["reason"],
                     "left_cmd": result["left"],
                     "right_cmd": result["right"],

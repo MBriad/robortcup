@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""敌人搜索/推动独立真机测试；后台视觉只采集，不参与电机控制。"""
+"""近物候选转向与视觉确认独立真机测试。"""
 
 import argparse
 import csv
@@ -22,11 +22,6 @@ from config import (  # noqa: E402
     CHASSIS_MOTOR_SWAP,
     DIGI_IR_ACTIVE_LEVEL,
     DIGI_IR_BITS,
-    ENEMY_DEV_HZ,
-    ENEMY_DEV_LABEL,
-    ENEMY_DEV_SECONDS,
-    ENEMY_LOG_DIR,
-    ENEMY_STALE_SECONDS,
     GRAY_ADC_MAX,
     GRAY_CENTER_REFERENCE,
     GRAY_CHANNELS,
@@ -39,11 +34,16 @@ from config import (  # noqa: E402
     GRAY_WHITE_REFERENCE,
     SHOVEL_ADC_MAX,
     SHOVEL_IR_CHANNELS,
+    PROBE_DEV_HZ,
+    PROBE_DEV_LABEL,
+    PROBE_DEV_SECONDS,
+    PROBE_LOG_DIR,
+    PROBE_STALE_SECONDS,
     VISION_CAMERA_DEVICE,
     VISION_MAX_AGE_MS,
 )
 from digi_ir import DigiIR  # noqa: E402
-from enemy_push import EnemyPushController  # noqa: E402
+from proximity_probe import ProximityProbeController  # noqa: E402
 from gray import GrayRiskModel, GraySensor  # noqa: E402
 from ir import IrSensor  # noqa: E402
 from shovel_guard import ShovelGuard  # noqa: E402
@@ -52,8 +52,11 @@ from shovel_guard import ShovelGuard  # noqa: E402
 FIELDS = (
     "t", "label", "mode", "state", "reason", "left_cmd", "right_cmd",
     "motor_enabled", "healthy", "vision_sequence", "vision_status",
-    "enemy_state", "enemy_source_direction",
-    "enemy_turn_direction", "enemy_slow", "enemy_confirmed",
+    "vision_has_good", "vision_has_bad",
+    "probe_state", "probe_source_direction",
+    "probe_turn_direction", "enemy_slow", "enemy_confirmed",
+    "probe_vision_count", "probe_vision_verdict",
+    "shovel_state", "shovel_active",
     "ir_front", "ir_left_front", "ir_right_front", "ir_left_rear",
     "ir_right_rear", "ir_rear", "gray_front", "gray_rear", "gray_left",
     "gray_right", "shovel_left", "shovel_right",
@@ -64,16 +67,16 @@ def default_log_path(label):
     safe = "".join(
         char if char.isalnum() or char in "-_" else "_"
         for char in label.strip()
-    ).strip("_") or "enemy_push"
+    ).strip("_") or "proximity_probe"
     return os.path.join(
-        ROOT, ENEMY_LOG_DIR,
+        ROOT, PROBE_LOG_DIR,
         "%s_%s.csv" % (safe, time.strftime("%Y%m%d_%H%M%S"))
     )
 
 
 def run(args):
     if args.drive:
-        print("敌人推动真机测试：架起车轮确认转向，再放到不会掉台的场地。")
+        print("近物候选真机测试：架起车轮确认转向，再放到不会掉台的场地。")
         if input("确认安全并启用电机请输入 DRIVE：").strip() != "DRIVE":
             print("未完成安全确认，测试取消。")
             return
@@ -115,7 +118,8 @@ def run(args):
         channels=SHOVEL_IR_CHANNELS,
         adc_max=SHOVEL_ADC_MAX,
     )
-    enemy = EnemyPushController(guard=ShovelGuard())
+    probe = ProximityProbeController()
+    shovel_guard = ShovelGuard()
     os.makedirs(os.path.dirname(os.path.abspath(args.log)), exist_ok=True)
     start = time.monotonic()
     period = 1.0 / args.hz
@@ -134,13 +138,57 @@ def run(args):
                 observation = gray_model.update(gray)
                 ir = digi.read_states()
                 shovel = shovel_sensor.read_raw()
-                vision_raw = vision.get_raw(max_age_ms=VISION_MAX_AGE_MS)
-                healthy = hardware.healthy and not hardware.stale(ENEMY_STALE_SECONDS)
-                result = enemy.update(
-                    ir, observation, shovel,
+                vision_raw = (
+                    vision.get_raw(max_age_ms=VISION_MAX_AGE_MS)
+                    or {"status": "stale"}
+                )
+                detections = list(vision_raw.get("detections") or [])
+                target = vision_raw.get("target")
+                if isinstance(target, dict):
+                    detections.append(target)
+                vision_has_good = any(
+                    item.get("type") == "good" for item in detections
+                )
+                vision_has_bad = any(
+                    item.get("type") == "bad" for item in detections
+                )
+                probe_vision = {
+                    "sequence": vision_raw.get("sequence"),
+                    "status": vision_raw.get("status", "stale"),
+                    "has_good": vision_has_good,
+                    "has_bad": vision_has_bad,
+                }
+                healthy = hardware.healthy and not hardware.stale(PROBE_STALE_SECONDS)
+                result = probe.update(
+                    ir, observation,
+                    vision=probe_vision,
                     now=loop_start, healthy=healthy, allow_start=True,
                 )
-                mode = "enemy_push" if result["owns_control"] else "enemy_wait"
+                guard_result = shovel_guard.update(
+                    shovel,
+                    active=(
+                        result["state"] == "ENEMY_PUSH"
+                        or shovel_guard.state != "IDLE"
+                    ),
+                    now=loop_start,
+                    healthy=healthy,
+                )
+                if guard_result["state"] != "IDLE":
+                    if result["state"] == "ENEMY_PUSH":
+                        probe.finish_push()
+                    result = {
+                        **result,
+                        "left": guard_result["left"],
+                        "right": guard_result["right"],
+                        "owns_control": True,
+                        "state": guard_result["state"],
+                        "reason": guard_result["reason"],
+                    }
+                mode = (
+                    "enemy_push" if result["state"] == "ENEMY_PUSH"
+                    else "proximity_probe" if result["owns_control"]
+                    else "probe_idle"
+                )
                 left = result["left"] if result["owns_control"] else 0
                 right = result["right"] if result["owns_control"] else 0
                 if args.drive:
@@ -159,11 +207,17 @@ def run(args):
                     "healthy": int(healthy),
                     "vision_sequence": vision_raw.get("sequence") if vision_raw else None,
                     "vision_status": vision_raw.get("status") if vision_raw else "stale",
-                    "enemy_state": result["state"],
-                    "enemy_source_direction": result.get("source_direction"),
-                    "enemy_turn_direction": result.get("turn_direction"),
+                    "vision_has_good": int(vision_has_good),
+                    "vision_has_bad": int(vision_has_bad),
+                    "probe_state": probe.state,
+                    "probe_source_direction": result.get("source_direction"),
+                    "probe_turn_direction": result.get("turn_direction"),
                     "enemy_slow": int(bool(result.get("slow", False))),
                     "enemy_confirmed": int(bool(result.get("confirmed", False))),
+                    "probe_vision_count": result.get("vision_count", 0),
+                    "probe_vision_verdict": result.get("vision_verdict"),
+                    "shovel_state": guard_result["state"],
+                    "shovel_active": int(guard_result["state"] != "IDLE"),
                     **{"ir_" + name: int(bool(ir[name])) for name in (
                         "front", "left_front", "right_front", "left_rear",
                         "right_rear", "rear",
@@ -186,15 +240,15 @@ def run(args):
         if vision is not None:
             vision.close()
         hardware.close()
-    print("敌人推动日志：%s" % args.log)
+    print("近物候选日志：%s" % args.log)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="敌人搜索与推动真机测试")
-    parser.add_argument("--label", default=ENEMY_DEV_LABEL)
-    parser.add_argument("--seconds", type=float, default=ENEMY_DEV_SECONDS,
+    parser = argparse.ArgumentParser(description="近物候选转向与视觉确认真机测试")
+    parser.add_argument("--label", default=PROBE_DEV_LABEL)
+    parser.add_argument("--seconds", type=float, default=PROBE_DEV_SECONDS,
                         help="0 表示运行到 Ctrl+C")
-    parser.add_argument("--hz", type=float, default=ENEMY_DEV_HZ)
+    parser.add_argument("--hz", type=float, default=PROBE_DEV_HZ)
     parser.add_argument("--log", default=None)
     parser.add_argument("--drive", action="store_true")
     parser.set_defaults(

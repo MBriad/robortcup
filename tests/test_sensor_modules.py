@@ -52,7 +52,7 @@ class SensorModuleBoundaryTest(unittest.TestCase):
     def test_dev_entrypoints_prefer_root_modules_when_pythonpath_contains_root(self):
         environment = dict(os.environ)
         environment["PYTHONPATH"] = ROOT
-        for filename in ("ring_patrol.py", "reentry.py", "enemy_push.py"):
+        for filename in ("ring_patrol.py", "reentry.py", "proximity_probe.py"):
             result = subprocess.run(
                 [sys.executable, "-B", os.path.join(ROOT, "dev", filename), "--help"],
                 cwd=ROOT,
@@ -64,7 +64,7 @@ class SensorModuleBoundaryTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
 
     def test_enemy_dev_runner_does_not_create_other_strategies(self):
-        path = os.path.join(ROOT, "dev", "enemy_push.py")
+        path = os.path.join(ROOT, "dev", "proximity_probe.py")
         with open(path, encoding="utf-8") as source_file:
             source = source_file.read()
         for forbidden in (

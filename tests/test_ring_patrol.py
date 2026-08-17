@@ -126,6 +126,29 @@ class RingPatrolTest(unittest.TestCase):
         self.assertEqual(PATROL_EDGE_TURN_ANGLE, result["turn_angle"])
         self.assertLess(result["left"] * result["right"], 0)
 
+    def test_side_risk_turns_away_even_when_the_zone_is_shallow(self):
+        cases = (
+            ("left", 0.70, 0.95, (1, -1)),
+            ("right", 0.95, 0.70, (-1, 1)),
+        )
+        for side, left, right, expected_sign in cases:
+            with self.subTest(side=side):
+                raw = raw_at_zone_components(
+                    front=0.70, rear=0.90, left=left, right=right,
+                )
+                controller = RingPatrolController()
+                feed(controller, raw, 5)
+                result = controller.update(
+                    raw,
+                    now=(controller.state_started
+                         + PATROL_EDGE_RETREAT_SECONDS + 0.001),
+                )
+                self.assertEqual("EDGE_TURN", result["state"])
+                self.assertEqual(expected_sign, (
+                    1 if result["left"] > 0 else -1,
+                    1 if result["right"] > 0 else -1,
+                ))
+
     def test_clear_rear_edge_moves_forward_before_turn(self):
         raw = raw_at_zone_components(
             front=0.4, rear=0.0, left=0.2, right=0.2,
@@ -178,6 +201,35 @@ class RingPatrolTest(unittest.TestCase):
         )
         self.assertIn(result["state"], ("MEDIUM_CRUISE", "CRUISE"))
 
+    def test_forward_recovery_interrupts_when_front_darkens_again(self):
+        edge = raw_at_zone_components(
+            front=0.0, rear=0.4, left=0.2, right=0.2,
+        )
+        controller = RingPatrolController()
+        feed(controller, edge, 5)
+        turn = feed(
+            controller,
+            raw_at_zone(0.8),
+            3,
+            start=controller.state_started + PATROL_EDGE_RETREAT_SECONDS + 0.001,
+        )
+        duration = MOTOR_TURN_CALIBRATION[turn["turn_direction"]][
+            PATROL_EDGE_TURN_ANGLE
+        ][1]
+        controller.update(
+            raw_at_zone(0.8), now=controller.state_started + duration + 0.001,
+        )
+
+        risky = raw_at_zone_components(
+            front=0.70, rear=0.80, left=0.80, right=0.80,
+        )
+        result = feed(
+            controller, risky, 3,
+            start=controller.state_started + 0.02,
+        )
+        self.assertEqual("EDGE_AVOID", result["state"])
+        self.assertIn("提前离边", result["reason"])
+
     def test_deep_dark_during_turn_restarts_retreat(self):
         edge = raw_at_zone_components(
             front=0.0, rear=0.4, left=0.2, right=0.2,
@@ -206,6 +258,14 @@ class RingPatrolTest(unittest.TestCase):
             (-PATROL_MIN_ACTIVE_SPEED, -PATROL_MIN_ACTIVE_SPEED),
             (result["left"], result["right"]),
         )
+
+    def test_side_white_edge_turns_away_from_the_white_side(self):
+        sample = raw_at_zone(0.0)
+        sample["left"] = GRAY_WHITE_REFERENCE["left"]
+        result = feed(RingPatrolController(), sample, 6)
+        self.assertEqual("EDGE_TURN", result["state"])
+        self.assertGreater(result["left"], 0)
+        self.assertLess(result["right"], 0)
 
     def test_center_white_mark_does_not_trigger_escape(self):
         sample = raw_at_zone(1.2)

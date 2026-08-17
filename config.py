@@ -96,9 +96,8 @@ PATROL_MEDIUM_LINEAR = 400
 PATROL_MEDIUM_TURN = 0
 PATROL_EDGE_RETREAT_SECONDS = 0.60
 PATROL_EDGE_TURN_ANGLE = 135.0
-PATROL_EDGE_SHALLOW_ZONE = 0.55
 PATROL_DEEP_ZONE = -0.45
-PATROL_ALTERNATE_TURN_SIGNAL = 0.40
+PATROL_TURN_SIGNAL_EPSILON = 0.05
 # 2026-08-16 patrol_20260816_091726.csv / 093316.csv：车身斜压白边时，
 # 单侧 zone 可低至 0.02~0.50，另一侧高出 1.0 以上；整体中位数仍安全，
 # 必须在转向和回中移动阶段单独拦截侧向风险。
@@ -124,15 +123,15 @@ MOTOR_TURN_CALIBRATION = {
         22.5: (400, 1.0),
         45.0: (500, 0.6),
         90.0: (550, 0.75),
-        135.0: (550, 0.8),
+        135.0: (550, 1),
         180.0: (600, 0.95),
     },
     "right": {
         10.0: (400, 0.5),
         22.5: (400, 1.0),
-        45.0: (500, 0.6),
+        45.0: (500, 0.8),
         90.0: (550, 0.725),
-        135.0: (550, 0.8),
+        135.0: (550, 1),
         180.0: (600, 0.975),
     },
 }
@@ -169,7 +168,9 @@ SHOVEL_IR_CHANNELS = {
 SHOVEL_ADC_MAX = IR_ADC_MAX
 SHOVEL_FILTER_WINDOW = 9  # 信号中值滤波窗口（同 ir.py 前头红外对齐模型）
 SHOVEL_HANG_ENTER = 670.0  # 滤波后 min(两路)>此值 = 铲子悬空
-SHOVEL_HANG_CLEAR = 1360.0  # 倒车后滤波后 max(两路)<此值 = 已收回台内（滞回，CLEAR>ENTER）
+SHOVEL_HANG_CLEAR = (
+    1360.0  # 倒车后滤波后 max(两路)<此值 = 已收回台内（滞回，CLEAR>ENTER）
+)
 SHOVEL_HANG_CONFIRM = 3  # 悬空确认帧数（防抖）
 SHOVEL_REVERSE_SPEED = PATROL_MIN_ACTIVE_SPEED  # 倒车收回速度（≥ 电机死区下限）
 SHOVEL_REVERSE_MIN_SECONDS = 0.3  # 最短倒车时长，防信号抖动提前停
@@ -192,31 +193,37 @@ HUNT_COLLECT_LOG_DIR = "data"
 VISION_CAMERA_DEVICE = "/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 HUNT_BAD_CENTER_ZONE = 0.15
 HUNT_BAD_CONFIRM_FRAMES = 2
+# 69 个已采集 good 样本范围 0.607~0.971；阈值需继续用误识别样本复核。
+HUNT_GOOD_MIN_CONFIDENCE = 0.55
+HUNT_GOOD_HIGH_CONFIDENCE = 0.80
+HUNT_GOOD_ACQUIRE_FRAMES = 2
+HUNT_GOOD_LOST_HOLD_FRAMES = 2
+HUNT_GOOD_LOST_HOLD_SECONDS = 0.35
+HUNT_GOOD_CONFIRM_FRAMES = 2
+HUNT_GOOD_PUSH_SPEED = VISION_APPROACH_SPEED
 
-# ---------- 敌人搜索与推动（enemy_push.py / dev/enemy_push.py） ----------
-# 来源：enemy_push_pack 2026-08-16 真机行为；敌人推动慢档实测使用 350。
+# ---------- 近物探测与敌人推动（proximity_probe.py / dev/proximity_probe.py） ----------
+# 来源：2026-08-16 六路红外近物测试；只有视觉排除能量块后才判为敌人。
 ENEMY_PUSH_SPEED = 700
 ENEMY_SLOW_SPEED = 350
 ENEMY_SLOW_ZONE = 1.3
 ENEMY_SLOW_CONFIRM = 6
-ENEMY_RETREAT_SPEED = 400
-ENEMY_RETREAT_SECONDS = 1.0
-ENEMY_ATTACK_PAUSE_SECONDS = 0.5
+PROBE_VISION_CONFIRM_FRAMES = 3
+PROBE_VISION_WAIT_TIMEOUT = 0.6
+PROBE_IR_REARM_CLEAR_FRAMES = 3
 ENEMY_COOLDOWN_SECONDS = 3.0
 ENEMY_REAR_ABORT_ZONE = -0.45
-ENEMY_WHITE_ZONE = 1.4
-ENEMY_WHITE_CONFIRM = 6
-# 六路数字红外找敌的定角动作；速度/时长继续查 MOTOR_TURN_CALIBRATION。
-ENEMY_TURN_PLAN = {
+# 六路数字红外近物候选的定角转向；速度/时长继续查 MOTOR_TURN_CALIBRATION。
+PROBE_TURN_PLAN = {
     "left_front": ("left", 45.0),
     "right_front": ("right", 45.0),
     "left_rear": ("left", 135.0),
     "right_rear": ("right", 135.0),
     "rear": (None, 180.0),  # 正后左右均可，运行时交替选择
 }
-ENEMY_REAR_FIRST_TURN = "right"
-ENEMY_STALE_SECONDS = PATROL_STALE_SECONDS
-ENEMY_DEV_HZ = 50.0
-ENEMY_DEV_SECONDS = 0.0
-ENEMY_DEV_LABEL = "enemy_push"
-ENEMY_LOG_DIR = "data"
+PROBE_REAR_FIRST_TURN = "right"
+PROBE_STALE_SECONDS = PATROL_STALE_SECONDS
+PROBE_DEV_HZ = 50.0
+PROBE_DEV_SECONDS = 0.0
+PROBE_DEV_LABEL = "proximity_probe"
+PROBE_LOG_DIR = "data"
