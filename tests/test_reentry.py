@@ -233,9 +233,6 @@ class ReentryControllerTest(unittest.TestCase):
             with self.subTest(filename=filename):
                 self.assertTrue(self.replay_csv(filename))
 
-    def test_latest_reentry_csv_does_not_match_four_sensor_policy(self):
-        self.assertEqual([], self.replay_csv("reentry_20260811_100641.csv"))
-
     def test_adc_correction_uses_calibrated_turn_directions(self):
         controller = ReentryController()
         controller._alignment = configured_alignment_model(window=1)

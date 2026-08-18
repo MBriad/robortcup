@@ -4,6 +4,7 @@
 import os
 import unittest
 
+from config import MOTOR_TURN_CALIBRATION
 from hunt import HuntController
 from dev.hunt import default_output_path, rows_for_result
 
@@ -82,8 +83,9 @@ class HuntToolTest(unittest.TestCase):
         self.assertEqual(1, rows[1]["io2"])
         self.assertEqual("avoid_bad", rows[0]["hunt_mode"])
         self.assertEqual("AVOID_TURN", rows[0]["hunt_state"])
-        self.assertEqual(550, rows[0]["left_cmd"])
-        self.assertEqual(-550, rows[0]["right_cmd"])
+        speed = MOTOR_TURN_CALIBRATION["right"][90.0][0]
+        self.assertEqual(speed, rows[0]["left_cmd"])
+        self.assertEqual(-speed, rows[0]["right_cmd"])
         self.assertEqual(1, rows[0]["motor_enabled"])
 
     def test_empty_frame_is_kept_for_baseline(self):

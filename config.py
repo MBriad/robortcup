@@ -26,12 +26,12 @@ DIGI_IR_PINS = {  # digi_ir.py DIGI_IR_PINS
     "front": 105,
 }
 DIGI_IR_BITS = {  # digi_ir.py DigiIR.bits
-    # 新车 2026-08-14 scan 实测：io0=前 io3=左前 io1=左后 io2=右前 io4=右后 io6=后
+    # 用户 2026-08-18 实测确认：正后传感器接 io5（原 08-14 scan 记 io6 有误）
     "left_rear": 1,
     "left_front": 3,
     "right_rear": 4,
     "right_front": 2,
-    "rear": 6,
+    "rear": 5,
     "front": 0,
 }
 DIGI_IR_ACTIVE_LEVEL = 0  # digi_ir.py DigiIR.active_level
@@ -116,23 +116,24 @@ PATROL_RECOVER_DEEP_ZONE = -0.35
 PATROL_COMMAND_LIMIT = 1023
 
 # 转向速度/时长标定（ring_patrol.py EDGE_TURN 与 reentry.py TURN_* 共用；
-# 来源：data/motor_turn_calibration.csv，新车 2026-08-14 实测，左右转分开查表）。
+# 来源：data/motor_turn_calibration.csv，新车 2026-08-18 重采 45/90/135/180，
+# 左右转分开查表；10°/22.5° 本次未重采，沿用 08-14 实测值（按用户要求保留）。
 MOTOR_TURN_CALIBRATION = {
     "left": {
         10.0: (400, 0.5),
         22.5: (400, 1.0),
-        45.0: (500, 0.6),
-        90.0: (550, 0.75),
-        135.0: (550, 1),
-        180.0: (600, 0.95),
+        45.0: (600, 0.55),
+        90.0: (600, 0.65),
+        135.0: (625, 0.8),
+        180.0: (560, 1.2),
     },
     "right": {
         10.0: (400, 0.5),
         22.5: (400, 1.0),
-        45.0: (500, 0.8),
-        90.0: (550, 0.725),
-        135.0: (550, 1),
-        180.0: (600, 0.975),
+        45.0: (600, 0.55),
+        90.0: (600, 0.65),
+        135.0: (625, 0.8),
+        180.0: (560, 1.2),
     },
 }
 PATROL_WHITE_ESCAPE_SPEED = 400
@@ -205,7 +206,7 @@ HUNT_GOOD_PUSH_SPEED = VISION_APPROACH_SPEED
 # ---------- 近物探测与敌人推动（proximity_probe.py / dev/proximity_probe.py） ----------
 # 来源：2026-08-16 六路红外近物测试；只有视觉排除能量块后才判为敌人。
 ENEMY_PUSH_SPEED = 700
-ENEMY_SLOW_SPEED = 350
+ENEMY_SLOW_SPEED = 550
 ENEMY_SLOW_ZONE = 1.3
 ENEMY_SLOW_CONFIRM = 6
 # 推敌期间只对连续不同 YOLO 帧的 bad 计数；单帧误识别不打断推进。

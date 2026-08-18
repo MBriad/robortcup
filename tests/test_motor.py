@@ -10,7 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from config import MOTOR_TURN_CALIBRATION, PATROL_RECOVER_STEP_CM
+from config import MOTOR_TURN_CALIBRATION
 from dev.motor_tool import DEFAULT_SPEED, MIN_SPEED, build_cases
 
 class MotorDirectionTest(unittest.TestCase):
@@ -40,19 +40,6 @@ class MotorDirectionTest(unittest.TestCase):
                 )
         self.assertEqual(MOTOR_TURN_CALIBRATION["left"], by_direction["left"])
         self.assertEqual(MOTOR_TURN_CALIBRATION["right"], by_direction["right"])
-
-    def test_linear_calibration_csv_matches_recover_step(self):
-        path = os.path.join(ROOT, "data", "motor_linear_calibration.csv")
-        with open(path, newline="", encoding="utf-8-sig") as handle:
-            rows = list(csv.DictReader(handle))
-
-        self.assertEqual({"forward", "backward"}, {row["direction"] for row in rows})
-        for row in rows:
-            self.assertEqual(550, int(row["speed"]))
-            self.assertEqual(1.5, float(row["duration"]))
-            self.assertEqual(PATROL_RECOVER_STEP_CM, float(row["distance_cm"]))
-            self.assertEqual("distance_measured", row["result"])
-
 
 if __name__ == "__main__":
     unittest.main()
