@@ -4,6 +4,7 @@
 import unittest
 
 from config import (
+    PROBE_BRAKE_SECONDS,
     PROBE_IR_REARM_CLEAR_FRAMES,
     ENEMY_PUSH_SPEED,
     ENEMY_SLOW_CONFIRM,
@@ -167,11 +168,14 @@ class ProximityProbeControllerTest(unittest.TestCase):
 
     def test_left_front_turns_left_45_degrees(self):
         controller = ProximityProbeController()
-        controller.update(
+        braked = controller.update(
             ir(left_front=True), observation(), now=1.0,
         )
+        self.assertEqual("PROBE_BRAKE", braked["state"])
+        self.assertEqual((0, 0), (braked["left"], braked["right"]))
         result = controller.update(
-            ir(left_front=True), observation(), now=1.02,
+            ir(left_front=True), observation(),
+            now=1.0 + PROBE_BRAKE_SECONDS + 0.02,
         )
         speed = MOTOR_TURN_CALIBRATION["left"][45.0][0]
         self.assertEqual("PROBE_TURN", result["state"])
@@ -184,7 +188,8 @@ class ProximityProbeControllerTest(unittest.TestCase):
             ir(left_rear=True), observation(), now=1.0,
         )
         result = controller.update(
-            ir(left_rear=True), observation(), now=1.02,
+            ir(left_rear=True), observation(),
+            now=1.0 + PROBE_BRAKE_SECONDS + 0.02,
         )
         speed = MOTOR_TURN_CALIBRATION["left"][135.0][0]
         self.assertEqual((-speed, speed), (result["left"], result["right"]))
@@ -197,7 +202,8 @@ class ProximityProbeControllerTest(unittest.TestCase):
         )
         result = controller.update(
             ir(right_front=True), observation(),
-            vision=vision(2, status="target", bad=True), now=1.02,
+            vision=vision(2, status="target", bad=True),
+            now=1.0 + PROBE_BRAKE_SECONDS + 0.02,
         )
         speed = MOTOR_TURN_CALIBRATION["right"][45.0][0]
         self.assertTrue(result["owns_control"])
@@ -210,9 +216,13 @@ class ProximityProbeControllerTest(unittest.TestCase):
             ir(left_front=True), observation(), vision=vision(1), now=1.0,
         )
         duration = MOTOR_TURN_CALIBRATION["left"][45.0][1]
+        turn_start = 1.0 + PROBE_BRAKE_SECONDS + 0.02
+        controller.update(
+            ir(), observation(), vision=vision(1), now=turn_start,
+        )
         result = controller.update(
             ir(), observation(), vision=vision(1),
-            now=1.0 + duration,
+            now=turn_start + duration + 0.02,
         )
         self.assertEqual("PROBE_VISION_WAIT", result["state"])
         self.assertEqual((0, 0), (result["left"], result["right"]))
@@ -223,13 +233,17 @@ class ProximityProbeControllerTest(unittest.TestCase):
             ir(left_front=True), observation(), vision=vision(1), now=1.0,
         )
         duration = MOTOR_TURN_CALIBRATION["left"][45.0][1]
+        turn_start = 1.0 + PROBE_BRAKE_SECONDS + 0.02
+        controller.update(
+            ir(), observation(), vision=vision(1), now=turn_start,
+        )
         controller.update(
             ir(), observation(), vision=vision(1),
-            now=1.0 + duration,
+            now=turn_start + duration + 0.02,
         )
         result = controller.update(
             ir(), observation(), vision=vision(2),
-            now=1.02 + duration,
+            now=turn_start + duration + 0.04,
         )
         self.assertFalse(result["owns_control"])
         self.assertEqual("post_turn_no_front", result["vision_verdict"])
@@ -242,10 +256,64 @@ class ProximityProbeControllerTest(unittest.TestCase):
             ir(left_front=True), observation(), now=1.0,
         )
         result = controller.update(
-            ir(left_front=True), observation(), now=1.02,
+            ir(left_front=True), observation(),
+            now=1.0 + PROBE_BRAKE_SECONDS + 0.02,
         )
         speed = MOTOR_TURN_CALIBRATION["right"][90.0][0]
         self.assertEqual((speed, -speed), (result["left"], result["right"]))
+
+    def test_side_detection_holds_zero_until_brake_seconds_elapse(self):
+        controller = ProximityProbeController(brake_seconds=0.2)
+        result = controller.update(
+            ir(left_rear=True), observation(), now=1.0,
+        )
+        self.assertEqual("PROBE_BRAKE", result["state"])
+        self.assertEqual((0, 0), (result["left"], result["right"]))
+        still = controller.update(
+            ir(left_rear=True), observation(), now=1.19,
+        )
+        self.assertEqual("PROBE_BRAKE", still["state"])
+        self.assertEqual((0, 0), (still["left"], still["right"]))
+
+    def test_brake_vision_good_cancels_candidate(self):
+        controller = ProximityProbeController()
+        controller.update(
+            ir(left_rear=True), observation(), now=1.0,
+        )
+        result = controller.update(
+            ir(left_rear=True), observation(),
+            vision=vision(1, good=True), now=1.02,
+        )
+        self.assertFalse(result["owns_control"])
+        self.assertEqual("IDLE", result["state"])
+        self.assertEqual("good", result["vision_verdict"])
+
+    def test_brake_front_ir_jumps_to_vision_wait(self):
+        controller = ProximityProbeController()
+        controller.update(
+            ir(left_rear=True), observation(), now=1.0,
+        )
+        jumped = controller.update(
+            ir(left_rear=True, front=True), observation(),
+            vision=vision(1), now=1.1,
+        )
+        self.assertEqual("PROBE_VISION_WAIT", jumped["state"])
+        self.assertEqual((0, 0), (jumped["left"], jumped["right"]))
+
+    def test_brake_cancel_blocks_retrigger_until_ir_clears(self):
+        controller = ProximityProbeController()
+        controller.update(
+            ir(left_rear=True), observation(), now=1.0,
+        )
+        controller.update(
+            ir(left_rear=True), observation(),
+            vision=vision(1, good=True), now=1.02,
+        )
+        retry = controller.update(
+            ir(left_rear=True), observation(), now=1.04,
+        )
+        self.assertFalse(retry["owns_control"])
+        self.assertEqual("IDLE", retry["state"])
 
     def test_slow_zone_latches_350_speed(self):
         controller = ProximityProbeController()

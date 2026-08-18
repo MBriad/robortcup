@@ -11,6 +11,7 @@ if ROOT not in sys.path:
 
 from config import (
     DIGI_IR_PINS,
+    PROBE_BRAKE_SECONDS,
     PROBE_VISION_CONFIRM_FRAMES,
     GRAY_CENTER_REFERENCE,
     GRAY_EDGE_REFERENCE,
@@ -444,11 +445,13 @@ class RobotControllerTest(unittest.TestCase):
         )
         turning = self.update(
             robot, dict(GRAY_CENTER_REFERENCE),
-            ir=ir_states(left_rear=True), vision=vision_frame(1), now=0.22,
+            ir=ir_states(left_rear=True), vision=vision_frame(1),
+            now=0.2 + PROBE_BRAKE_SECONDS + 0.02,
         )
         speed = MOTOR_TURN_CALIBRATION["left"][135.0][0]
         self.assertEqual("proximity_probe", started["mode"])
-        self.assertEqual("PROBE_TURN", started["state"])
+        self.assertEqual("PROBE_BRAKE", started["state"])
+        self.assertEqual((0, 0), (started["left"], started["right"]))
         self.assertEqual((-speed, speed), (turning["left"], turning["right"]))
 
     def test_far_bad_does_not_block_unrelated_ir_probe_turn(self):
@@ -461,9 +464,16 @@ class RobotControllerTest(unittest.TestCase):
             vision=vision_frame(1, far_bad_on_left, target=far_bad_on_left),
             now=0.2,
         )
+        turning = self.update(
+            robot, dict(GRAY_CENTER_REFERENCE),
+            ir=ir_states(right_front=True),
+            vision=vision_frame(1, far_bad_on_left, target=far_bad_on_left),
+            now=0.2 + PROBE_BRAKE_SECONDS + 0.02,
+        )
         self.assertEqual("proximity_probe", result["mode"])
-        self.assertEqual("PROBE_TURN", result["state"])
+        self.assertEqual("PROBE_BRAKE", result["state"])
         self.assertEqual("right_front", result["source_direction"])
+        self.assertEqual("PROBE_TURN", turning["state"])
 
     def test_enemy_push_ignores_front_side_edge_until_shovel_hangs(self):
         robot = RobotController()
@@ -584,7 +594,7 @@ class RobotControllerTest(unittest.TestCase):
         robot = RobotController()
         self.warm_patrol(robot)
         result = None
-        for index in range(SHOVEL_FILTER_WINDOW):
+        for index in range(SHOVEL_FILTER_WINDOW + 2):
             result = self.update(
                 robot, dict(GRAY_CENTER_REFERENCE),
                 ir=ir_states(left_front=True), shovel=SHOVEL_HANGING,
@@ -707,10 +717,15 @@ class RobotControllerTest(unittest.TestCase):
             ir=ir_states(left_front=True), vision=vision_frame(1), now=1.0,
         )
         duration = MOTOR_TURN_CALIBRATION["left"][45.0][1]
+        turn_start = 1.0 + PROBE_BRAKE_SECONDS + 0.02
+        self.update(
+            robot, dict(GRAY_CENTER_REFERENCE),
+            ir=ir_states(), vision=vision_frame(2), now=turn_start,
+        )
         result = self.update(
             robot, dict(GRAY_CENTER_REFERENCE),
             ir=ir_states(), vision=vision_frame(2),
-            now=1.0 + duration,
+            now=turn_start + duration + 0.02,
         )
         self.assertEqual("proximity_probe", result["mode"])
         self.assertEqual("PROBE_VISION_WAIT", result["state"])

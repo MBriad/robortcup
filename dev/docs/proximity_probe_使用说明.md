@@ -19,8 +19,9 @@ python3 dev/proximity_probe.py --label proximity_probe --seconds 0 --drive
 
 输入 `DRIVE` 后启用电机，按 `Ctrl+C` 停止；CSV 默认写入 `data/`。
 
-所有可调参数集中在 `config.py`：`PROBE_*` 配置候选转向、视觉等待和 dev 日志；
-`ENEMY_*` 只配置确认敌人后的推动/慢档、bad 打断帧数、后路保护与冷却。
+所有可调参数集中在 `config.py`：`PROBE_*` 配置候选转向（`PROBE_BRAKE_SECONDS`
+为转向前的刹车归0时长）、视觉等待和 dev 日志；`ENEMY_*` 只配置确认敌人后的
+推动/慢档、bad 打断帧数、后路保护与冷却。
 
 ## 仲裁规则
 
@@ -30,7 +31,8 @@ python3 dev/proximity_probe.py --label proximity_probe --seconds 0 --drive
    最多等待 0.6 秒后超时取消。
 4. 超时或视觉否决后，必须等前红外先清空，才允许重新确认同一方向的新目标。
 5. `ENEMY_PUSH` 一旦确认，不再被后续视觉打断，持续到铲子保护或后路保护接管。
-6. 正前空闲时，左前/右前/左后/右后/正后按 45°/135°/180°定角转向。
+6. 正前空闲时，左前/右前/左后/右后/正后按 45°/135°/180°定角转向；转向前先进入
+   `PROBE_BRAKE` 刹车归0（`PROBE_BRAKE_SECONDS`，运动中起转会让原地转标定失效）。
 7. 转向途中出现 `good` 会立即取消近物候选；远处 `bad` 不打断定角转向，转完后再由视觉确认阻止误推。
 
 ## 推荐真机顺序
@@ -41,9 +43,9 @@ python3 dev/proximity_probe.py --label proximity_probe --seconds 0 --drive
 2. 连续 3 个新 `no_target` 帧：应进入 `ENEMY_PUSH`；重复帧序号不能增加计数。
 3. 等待时放入 good 或 bad：应取消攻击，电机保持停止。
 4. 等待时遮挡摄像头或让前红外消失：应取消攻击，不得误推。
-5. 左前/右前触发：应朝对应方向转 45°。
-6. 左后/右后触发：应朝对应方向转 135°。
-7. 正后触发：应转 180°。
+5. 左前/右前触发：应先停稳（`PROBE_BRAKE`，命令 0,0 约 `PROBE_BRAKE_SECONDS`）再朝对应方向转 45°。
+6. 左后/右后触发：应先停稳再朝对应方向转 135°。
+7. 正后触发：应先停稳再转 180°。
 8. 推到铲子悬空：应停车、倒车收回，不能继续前冲。
 
 CSV 分析重点查看 `vision_sequence`、`vision_status`、`vision_has_good`、

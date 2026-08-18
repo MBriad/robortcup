@@ -13,6 +13,7 @@ from config import (
     ENEMY_SLOW_SPEED,
     ENEMY_SLOW_ZONE,
     MOTOR_TURN_CALIBRATION,
+    PROBE_BRAKE_SECONDS,
     PROBE_IR_REARM_CLEAR_FRAMES,
     PROBE_REAR_FIRST_TURN,
     PROBE_TURN_PLAN,
@@ -32,7 +33,8 @@ class ProximityProbeController:
             bad_interrupt_frames=ENEMY_BAD_INTERRUPT_FRAMES,
             vision_confirm_frames=PROBE_VISION_CONFIRM_FRAMES,
             vision_wait_timeout=PROBE_VISION_WAIT_TIMEOUT,
-            ir_rearm_clear_frames=PROBE_IR_REARM_CLEAR_FRAMES):
+            ir_rearm_clear_frames=PROBE_IR_REARM_CLEAR_FRAMES,
+            brake_seconds=PROBE_BRAKE_SECONDS):
         if int(vision_confirm_frames) < 1:
             raise ValueError("敌人视觉确认帧数必须为正")
         if int(bad_interrupt_frames) < 1:
@@ -41,6 +43,8 @@ class ProximityProbeController:
             raise ValueError("敌人视觉等待超时必须为正")
         if int(ir_rearm_clear_frames) < 1:
             raise ValueError("红外重新布防清除帧数必须为正")
+        if float(brake_seconds) < 0.0:
+            raise ValueError("刹车归0时长不能为负")
         self.turn_calibration = turn_calibration
         self.turn_plan = dict(turn_plan)
         self.push_speed = int(push_speed)
@@ -49,6 +53,7 @@ class ProximityProbeController:
         self.vision_confirm_frames = int(vision_confirm_frames)
         self.vision_wait_timeout = float(vision_wait_timeout)
         self.ir_rearm_clear_frames = int(ir_rearm_clear_frames)
+        self.brake_seconds = float(brake_seconds)
         self.state = "IDLE"
         self.command = (0, 0)
         self.reason = "等待摄像头和红外空闲"
@@ -66,6 +71,8 @@ class ProximityProbeController:
         self._side_clear_count = 0
         self._front_clear_count = 0
         self._fallback_turn = rear_first_turn
+        self._brake_source = None
+        self._brake_until = 0.0
         self.vision_count = 0
         self.vision_verdict = "idle"
         self._last_vision_sequence = None
@@ -117,6 +124,15 @@ class ProximityProbeController:
             self._bad_interrupt_count = 0
             self._last_bad_interrupt_sequence = None
 
+    def _start_brake(self, source, now):
+        """检测到侧向近物后先刹车归0，停稳再按原地标定转向。"""
+        self._brake_source = source
+        self.source_direction = source
+        self._brake_until = now + self.brake_seconds
+        self._side_armed = False
+        self._side_clear_count = 0
+        self._enter("PROBE_BRAKE", now, "%s 发现近物候选，先刹车归0再转向" % source)
+
     def _start_turn(self, source, now):
         direction, angle = self._turn_for_source(source)
         if source == "rear":
@@ -128,9 +144,12 @@ class ProximityProbeController:
         self.turn_direction = direction
         self.turn_until = now + float(duration)
         self._turn_speed = int(speed)
-        self._side_armed = False
-        self._side_clear_count = 0
         self._enter("PROBE_TURN", now, "%s 发现近物候选，原地转向" % source)
+        self.command = (
+            (-self._turn_speed, self._turn_speed)
+            if self.turn_direction == "left"
+            else (self._turn_speed, -self._turn_speed)
+        )
 
     def _start_push(self, now, reason):
         self.source_direction = "front"
@@ -157,6 +176,8 @@ class ProximityProbeController:
         self.source_direction = None
         self.turn_direction = None
         self.turn_until = 0.0
+        self._brake_source = None
+        self._brake_until = 0.0
         self.confirmed = False
         self.slow = False
         self._slow_count = 0
@@ -245,10 +266,26 @@ class ProximityProbeController:
                 self.reason = "等待前方目标离开后重新允许推动"
                 return self._result(False)
             if side is not None and self._side_armed:
-                self._start_turn(side, now)
+                self._start_brake(side, now)
                 return self._result()
             self.reason = "没有近物候选"
             return self._result(False)
+
+        if self.state == "PROBE_BRAKE":
+            if vision_has_good:
+                self.cancel()
+                self._side_armed = False
+                self._side_clear_count = 0
+                self.reason = "刹车期间视觉识别为 good，取消近物候选"
+                self.vision_verdict = "good"
+                return self._result(False)
+            if front:
+                self._start_vision_wait(now, vision_sequence)
+                return self._result()
+            if now >= self._brake_until:
+                self._start_turn(self._brake_source, now)
+                return self._result()
+            return self._result()
 
         if self.state == "PROBE_TURN":
             if vision_has_good:

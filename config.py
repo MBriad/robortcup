@@ -173,7 +173,7 @@ SHOVEL_HANG_CLEAR = (
     1360.0  # 倒车后滤波后 max(两路)<此值 = 已收回台内（滞回，CLEAR>ENTER）
 )
 SHOVEL_HANG_CONFIRM = 3  # 悬空确认帧数（防抖）
-SHOVEL_REVERSE_SPEED = PATROL_MIN_ACTIVE_SPEED  # 倒车收回速度（≥ 电机死区下限）
+SHOVEL_REVERSE_SPEED = 500  # 倒车收回速度（≥ 电机死区下限）
 SHOVEL_REVERSE_MIN_SECONDS = 0.3  # 最短倒车时长，防信号抖动提前停
 SHOVEL_REVERSE_TIMEOUT = 3.0  # 倒车超时兜底 → 停车待命
 
@@ -186,7 +186,7 @@ VISION_BIG_TURN_CLEAR = 0.35  # 大转退出滞回，避免大小转反复切换
 VISION_BIG_TURN_SPEED = 400  # 原地大转；新车最低可靠转速
 VISION_ARC_INNER_SPEED = 400  # 小转内侧轮
 VISION_ARC_OUTER_SPEED = 500  # 小转外侧轮；沿用已验证的 500/400 差速
-VISION_APPROACH_SPEED = 400  # 对准后直线接近
+VISION_APPROACH_SPEED = 450  # 对准后直线接近
 
 # ---------- hunt 视觉追踪与近距 bad 避让（hunt.py / dev/hunt.py） ----------
 HUNT_COLLECT_SECONDS = 15.0
@@ -201,7 +201,7 @@ HUNT_GOOD_ACQUIRE_FRAMES = 2
 HUNT_GOOD_LOST_HOLD_FRAMES = 2
 HUNT_GOOD_LOST_HOLD_SECONDS = 0.35
 HUNT_GOOD_CONFIRM_FRAMES = 2
-HUNT_GOOD_PUSH_SPEED = VISION_APPROACH_SPEED
+HUNT_GOOD_PUSH_SPEED = 350
 
 # ---------- 近物探测与敌人推动（proximity_probe.py / dev/proximity_probe.py） ----------
 # 来源：2026-08-16 六路红外近物测试；只有视觉排除能量块后才判为敌人。
@@ -214,6 +214,10 @@ ENEMY_BAD_INTERRUPT_FRAMES = 2
 PROBE_VISION_CONFIRM_FRAMES = 3
 PROBE_VISION_WAIT_TIMEOUT = 0.6
 PROBE_IR_REARM_CLEAR_FRAMES = 3
+# 红外中断巡台→定角转向前的刹车归0时长（2026-08-18 决定）：
+# 巡台 400~450 线速度下起转会让原地转标定失效（欠转+前移），
+# 先停稳再按原地标定转向；初值 0.2s，真机目测 450→0 停稳耗时后定稿。
+PROBE_BRAKE_SECONDS = 0.2
 ENEMY_COOLDOWN_SECONDS = 3.0
 ENEMY_REAR_ABORT_ZONE = -0.45
 # 六路数字红外近物候选的定角转向；速度/时长继续查 MOTOR_TURN_CALIBRATION。

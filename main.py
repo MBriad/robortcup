@@ -256,7 +256,7 @@ class RobotController:
             self._reentry_active = False
 
         if self.probe.active:
-            if (self.probe.state == "PROBE_TURN"
+            if (self.probe.state in ("PROBE_TURN", "PROBE_BRAKE")
                     and patrol_result["state"] not in HUNT_ALLOWED_PATROL_STATES):
                 self.probe.cancel()
                 self.hunt.cancel()
