@@ -73,9 +73,9 @@ class RingPatrolController:
 
         # 只有明确的车尾贴边信号才前进，其余情况统一先后退制造转向空间。
         if linear_signal > cfg.PATROL_REAR_RETREAT_DELTA:
-            command = (cfg.PATROL_RECOVER_SPEED, cfg.PATROL_RECOVER_SPEED)
+            command = (cfg.PATROL_RECOVER_FORWARD_SPEED, cfg.PATROL_RECOVER_FORWARD_SPEED)
         else:
-            command = (-cfg.PATROL_RECOVER_SPEED, -cfg.PATROL_RECOVER_SPEED)
+            command = (-cfg.PATROL_RECOVER_BACKWARD_SPEED, -cfg.PATROL_RECOVER_BACKWARD_SPEED)
         self._enter("EDGE_AVOID", now, command, reason)
 
     @staticmethod
@@ -167,7 +167,10 @@ class RingPatrolController:
         return bool(hits) and bool(observation.get("near_edge"))
 
     def _start_recover(self, observation, now, forward, reason):
-        speed = cfg.PATROL_RECOVER_SPEED if forward else -cfg.PATROL_RECOVER_SPEED
+        speed = (
+            cfg.PATROL_RECOVER_FORWARD_SPEED
+            if forward else -cfg.PATROL_RECOVER_BACKWARD_SPEED
+        )
         state = "RECOVER_FORWARD" if forward else "RECOVER_BACKWARD"
         self._enter(state, now, (speed, speed), reason)
 
@@ -208,7 +211,7 @@ class RingPatrolController:
         self._enter(
             "EDGE_AVOID",
             now,
-            (-cfg.PATROL_RECOVER_SPEED, -cfg.PATROL_RECOVER_SPEED),
+            (-cfg.PATROL_RECOVER_BACKWARD_SPEED, -cfg.PATROL_RECOVER_BACKWARD_SPEED),
             "外部自救后重新退离",
         )
 

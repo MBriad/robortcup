@@ -1,6 +1,0 @@
-source,label,distance,phase,rows,left_median,right_median,diff_median,diff_p05,diff_p95,signal_p01,signal_p99,both_active_ratio,right_floor_ratio,alignment_usable,note
-右偏20度且离墙居中位置.csv,right_bias,middle,steady,1243,618.0,517.0,108.0,94.0,127.0,617.0,634.0,1.0,0.0,1,左右两路均进入有效量程，可用于对齐建模
-左偏20度且离墙居中位置.csv,left_bias,middle,steady,1145,570.0,716.0,-146.0,-147.0,-134.2,715.0,717.0,1.0,0.0,1,左右两路均进入有效量程，可用于对齐建模
-正对墙.csv,center_near,near,steady,1235,1337.0,1362.0,-25.0,-26.0,-11.0,1361.0,1363.0,1.0,0.0,1,左右两路均进入有效量程，可用于对齐建模
-正对墙且离墙居中位置.csv,center_middle,middle,steady,2051,600.0,587.0,8.0,-16.0,33.0,387.0,763.0,1.0,0.0,1,左右两路均进入有效量程，可用于对齐建模
-正对着墙且距离墙最远.csv,center_far,far,steady,1928,171.0,141.0,31.0,14.0,74.65,155.0,206.0,0.9995,0.0005,1,左右两路均进入有效量程，可用于对齐建模

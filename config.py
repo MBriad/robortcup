@@ -124,7 +124,7 @@ MOTOR_TURN_CALIBRATION = {
         22.5: (400, 1.0),
         45.0: (600, 0.55),
         90.0: (600, 0.65),
-        135.0: (625, 0.8),
+        135.0: (625, 1),
         180.0: (560, 1.2),
     },
     "right": {
@@ -132,14 +132,15 @@ MOTOR_TURN_CALIBRATION = {
         22.5: (400, 1.0),
         45.0: (600, 0.55),
         90.0: (600, 0.65),
-        135.0: (625, 0.8),
+        135.0: (625, 1),
         180.0: (560, 1.2),
     },
 }
 PATROL_WHITE_ESCAPE_SPEED = 400
 PATROL_WHITE_ESCAPE_SECONDS = 0.6
-PATROL_RECOVER_SPEED = 400
-PATROL_RECOVER_SECONDS = 1.5
+PATROL_RECOVER_FORWARD_SPEED = 400  # 恢复前进速度（车尾贴边时顶出）
+PATROL_RECOVER_BACKWARD_SPEED = 400  # 恢复后退速度（倒车制造转向空间）
+PATROL_RECOVER_SECONDS = 2
 PATROL_RECOVER_RELEASE_ZONE = 0.55
 PATROL_RECOVER_STEP_CM = 21.5  # 400×0.6s 实测退离距离
 PATROL_WHITE_CONFIRM = 4
@@ -153,14 +154,24 @@ REENTRY_CORRECT_TIMEOUT = 3.0
 REENTRY_APPROACH_SPEED = 700  # 大力前冲撞墙速度（一次冲到底，撞上立即停车防堵转）
 REENTRY_APPROACH_TIMEOUT = 2.0  # 大力冲撞兜底时长：超时未贴墙则停车（真机调）
 REENTRY_APPROACH_TOUCH_SIGNAL = 1060.0  # 前头模拟红外 signal≥此值=已贴墙；新车 2026-08-15：贴墙 p99≈1363、居中 p99≈763 取中点
-REENTRY_REVERSE_SPEED = 550  # 掉台矫正完毕倒车速度，与巡台恢复分开调
+REENTRY_REVERSE_SPEED = 900  # 掉台矫正完毕倒车速度，与巡台恢复分开调
 REENTRY_REVERSE_TIMEOUT = 3.0
 
+# ---------- 开局后退上台（main.py 一次性动作） ----------
+# 比赛开始 main 启动后无条件后退上台一次：执行期间不看灰度、独占控制权，
+# 执行完进入正常仲裁；RobotController 默认禁用，生产 run() 传入秒数才启用。
+START_REVERSE_SPEED = 1000  # 开局后退速度；爬台阶可行性需真机测后定稿
+START_REVERSE_SECONDS = (
+    1.8  # 开局后退时长初值；800×时长退距待真机量（参照 400×0.6s≈21.5cm）
+)
+
 # ---------- 铲子防掉落（shovel_guard.py ShovelGuard 参数） ----------
-# 阈值来源 2026-08-15 新车采集（data/shovel_hang_OutOfStage.csv / shovel_stage_OnStage.csv，
-# 9 帧中值滤波后）：悬空 min(两路) p01=1291、台内 min(两路) p99=46 → ENTER 取中点 670；
-# 悬空 max(两路) p01=1452、台内 max(两路) p99=1265 → CLEAR 取中点 1360。
+# 阈值来源 2026-08-21 重采（data/shovel_hang_OutOfStage.csv /
+# shovel_stage_instage.csv，9 帧中值滤波后，dev/calibrate_shovel.py 重算）：
+# 台内 min(两路) p99=780.3、悬空 min(两路) p01=1488.0 → ENTER=1134.1；
+# 台内 max(两路) p99=929.0、悬空 max(两路) p01=1706.1 → CLEAR=1317.5。
 # 新车极性与旧车相反：悬空=信号高、台内=信号低（判据：两路均 >ENTER 触发、均 <CLEAR 收回）。
+# 新数据回放：台内样本全部保持 IDLE；悬空样本触发 HANGED → REVERSE。
 SHOVEL_IR_CHANNELS = {
     # 新车 2026-08-15 scan 实测：铲子底下红外左=4、右=5。
     "left": 4,
@@ -168,9 +179,9 @@ SHOVEL_IR_CHANNELS = {
 }  # 铲子底下 2 路模拟红外；接线用 dev/shovel_tool.py scan 确认
 SHOVEL_ADC_MAX = IR_ADC_MAX
 SHOVEL_FILTER_WINDOW = 9  # 信号中值滤波窗口（同 ir.py 前头红外对齐模型）
-SHOVEL_HANG_ENTER = 670.0  # 滤波后 min(两路)>此值 = 铲子悬空
+SHOVEL_HANG_ENTER = 1134.1  # 滤波后 min(两路)>此值 = 铲子悬空
 SHOVEL_HANG_CLEAR = (
-    1360.0  # 倒车后滤波后 max(两路)<此值 = 已收回台内（滞回，CLEAR>ENTER）
+    1317.5  # 倒车后滤波后 max(两路)<此值 = 已收回台内（滞回，CLEAR>ENTER）
 )
 SHOVEL_HANG_CONFIRM = 3  # 悬空确认帧数（防抖）
 SHOVEL_REVERSE_SPEED = 500  # 倒车收回速度（≥ 电机死区下限）
@@ -201,7 +212,7 @@ HUNT_GOOD_ACQUIRE_FRAMES = 2
 HUNT_GOOD_LOST_HOLD_FRAMES = 2
 HUNT_GOOD_LOST_HOLD_SECONDS = 0.35
 HUNT_GOOD_CONFIRM_FRAMES = 2
-HUNT_GOOD_PUSH_SPEED = 350
+HUNT_GOOD_PUSH_SPEED = 400
 
 # ---------- 近物探测与敌人推动（proximity_probe.py / dev/proximity_probe.py） ----------
 # 来源：2026-08-16 六路红外近物测试；只有视觉排除能量块后才判为敌人。

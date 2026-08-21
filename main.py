@@ -22,6 +22,8 @@ from config import (
     PATROL_STALE_SECONDS,
     SHOVEL_ADC_MAX,
     SHOVEL_IR_CHANNELS,
+    START_REVERSE_SECONDS,
+    START_REVERSE_SPEED,
     VISION_CAMERA_DEVICE,
     VISION_MAX_AGE_MS,
 )
@@ -43,7 +45,7 @@ HUNT_ALLOWED_PATROL_STATES = ("CRUISE", "MEDIUM_CRUISE")
 class RobotController:
     """统一调度巡台与掉台回归；输入传感器数据，输出唯一电机命令。"""
 
-    def __init__(self):
+    def __init__(self, start_reverse_seconds=None):
         self.patrol = RingPatrolController()
         self.reentry = ReentryController()
         self.shovel_guard = ShovelGuard()
@@ -57,6 +59,10 @@ class RobotController:
         self._vision_has_good = False
         self._vision_has_bad = False
         self._enemy_bad_interrupt_count = 0
+        # 开局后退上台：None=禁用（测试默认），秒数=生产 run() 启用。
+        self._start_reverse_seconds = float(start_reverse_seconds or 0.0)
+        self._start_reverse_done = start_reverse_seconds is None
+        self._start_reverse_until = None
 
     def _reset_patrol(self, gray_raw, now, healthy):
         self.patrol = RingPatrolController()
@@ -120,6 +126,25 @@ class RobotController:
         now = time.monotonic() if now is None else float(now)
         self._enemy_bad_interrupt_count = 0
         shovel = shovel or {"left": 0.0, "right": 0.0, "valid": False}
+
+        # 开局一次性后退上台：执行期间不看灰度、独占控制权，执行完进入正常仲裁。
+        if not self._start_reverse_done and healthy:
+            if self._start_reverse_until is None:
+                self._start_reverse_until = now + self._start_reverse_seconds
+            if now < self._start_reverse_until:
+                patrol_result = self.patrol.update(gray_raw, now=now, healthy=healthy)
+                # 预热 reentry 灰度滤波，避免动作结束后冷启动误判 SENSOR_STOP。
+                self.reentry.update(gray_raw, ir, analog, now=now, healthy=healthy)
+                selected = {
+                    "left": -START_REVERSE_SPEED,
+                    "right": -START_REVERSE_SPEED,
+                    "state": "START_REVERSE",
+                    "reason": "开局后退上台",
+                    "owns_control": True,
+                    "observation": patrol_result["observation"],
+                }
+                return self._result("start_reverse", selected)
+            self._start_reverse_done = True
         vision_available = (
             isinstance(vision, dict)
             and vision.get("sequence") is not None
@@ -387,7 +412,7 @@ def run(args):
         channels=SHOVEL_IR_CHANNELS,
         adc_max=SHOVEL_ADC_MAX,
     )
-    robot = RobotController()
+    robot = RobotController(start_reverse_seconds=START_REVERSE_SECONDS)
     fields = (
         "t", "front", "rear", "left", "right",
         "zone_front", "zone_rear", "zone_left", "zone_right", "zone_score",

@@ -24,6 +24,7 @@ from config import (
     PATROL_SHOVEL_PREHEAT_FRONT_ZONE,
     SHOVEL_FILTER_WINDOW,
     SHOVEL_HANG_CONFIRM,
+    START_REVERSE_SPEED,
 )
 from main import RobotController
 
@@ -124,6 +125,37 @@ class RobotControllerTest(unittest.TestCase):
             )
         self.assertEqual("ENEMY_PUSH", result["state"])
         return result
+
+    def test_start_reverse_runs_once_then_hands_back_to_patrol(self):
+        robot = RobotController(start_reverse_seconds=0.2)
+        started = self.update(robot, dict(GRAY_CENTER_REFERENCE), now=0.0)
+        self.assertEqual("start_reverse", started["mode"])
+        self.assertEqual("START_REVERSE", started["state"])
+        self.assertEqual((-START_REVERSE_SPEED, -START_REVERSE_SPEED),
+                         (started["left"], started["right"]))
+        mid = self.update(robot, dict(GRAY_CENTER_REFERENCE), now=0.1)
+        self.assertEqual("START_REVERSE", mid["state"])
+        after = self.update(robot, dict(GRAY_CENTER_REFERENCE), now=0.3)
+        self.assertNotEqual("START_REVERSE", after["state"])
+        self.assertEqual("patrol", after["mode"])
+        later = self.update(robot, dict(GRAY_CENTER_REFERENCE), now=1.0)
+        self.assertNotEqual("start_reverse", later["mode"])
+        self.assertEqual("patrol", later["mode"])
+
+    def test_start_reverse_waits_for_healthy_hardware(self):
+        robot = RobotController(start_reverse_seconds=0.2)
+        result = robot.update(
+            dict(GRAY_CENTER_REFERENCE), ir_states(), ANALOG_VALID,
+            SHOVEL_ON_STAGE, now=0.0, healthy=False,
+        )
+        self.assertNotEqual("start_reverse", result["mode"])
+        started = robot.update(
+            dict(GRAY_CENTER_REFERENCE), ir_states(), ANALOG_VALID,
+            SHOVEL_ON_STAGE, now=0.02, healthy=True,
+        )
+        self.assertEqual("start_reverse", started["mode"])
+        self.assertEqual((-START_REVERSE_SPEED, -START_REVERSE_SPEED),
+                         (started["left"], started["right"]))
 
     def test_safe_ground_uses_patrol_command(self):
         robot = RobotController()

@@ -26,8 +26,9 @@ from config import (
     PATROL_EDGE_TURN_ANGLE,
     PATROL_MEDIUM_LINEAR,
     PATROL_MIN_ACTIVE_SPEED,
+    PATROL_RECOVER_BACKWARD_SPEED,
+    PATROL_RECOVER_FORWARD_SPEED,
     PATROL_RECOVER_SECONDS,
-    PATROL_RECOVER_SPEED,
     PATROL_SHOVEL_PREHEAT_FRONT_ZONE,
 )
 from gray import GrayRiskModel
@@ -114,7 +115,7 @@ class RingPatrolTest(unittest.TestCase):
         result = feed(controller, raw, 5)
         self.assertEqual("EDGE_AVOID", result["state"])
         self.assertEqual(
-            (-PATROL_RECOVER_SPEED, -PATROL_RECOVER_SPEED),
+            (-PATROL_RECOVER_BACKWARD_SPEED, -PATROL_RECOVER_BACKWARD_SPEED),
             (result["left"], result["right"]),
         )
 
@@ -156,7 +157,7 @@ class RingPatrolTest(unittest.TestCase):
         result = feed(RingPatrolController(), raw, 5)
         self.assertEqual("EDGE_AVOID", result["state"])
         self.assertEqual(
-            (PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED),
+            (PATROL_RECOVER_FORWARD_SPEED, PATROL_RECOVER_FORWARD_SPEED),
             (result["left"], result["right"]),
         )
 
@@ -189,7 +190,7 @@ class RingPatrolTest(unittest.TestCase):
         )
         self.assertEqual("RECOVER_FORWARD", result["state"])
         self.assertEqual(
-            (PATROL_RECOVER_SPEED, PATROL_RECOVER_SPEED),
+            (PATROL_RECOVER_FORWARD_SPEED, PATROL_RECOVER_FORWARD_SPEED),
             (result["left"], result["right"]),
         )
 
